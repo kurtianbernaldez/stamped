@@ -873,8 +873,10 @@ export default function App() {
     }
   }
 
+  const [mobilePanel, setMobilePanel] = useState<'watermark' | 'parameters'>('watermark')
+
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: t.bg, color: t.text, fontFamily: 'Arial, Helvetica, sans-serif', overflow: 'hidden' }}>
+    <div className="app-shell">
 
       {/* Header */}
       <header style={{ flexShrink: 0, background: t.bg, borderBottom: `2px solid ${t.accent}`, zIndex: 50 }}>
@@ -886,11 +888,11 @@ export default function App() {
                 <span style={{ fontSize: 15, fontWeight: 700, color: t.accent, letterSpacing: '0.08em', textTransform: 'uppercase', lineHeight: 1.2 }}>
                   Stamped
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.2 }}>
+                <span className="header-subtitle" style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.2 }}>
                   Tiled Watermark Generator
                 </span>
               </div>
-              <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted, lineHeight: 1.2 }}>
+              <span className="header-subtitle" style={{ fontSize: 11, fontWeight: 400, color: t.textMuted, lineHeight: 1.2 }}>
                 Custom size, spacing, rotation &amp; transparency
               </span>
             </div>
@@ -898,11 +900,17 @@ export default function App() {
         </div>
       </header>
 
+      {/* Mobile tab bar */}
+      <div className="mobile-tabs">
+        <button className={mobilePanel === 'watermark' ? 'active' : ''} onClick={() => setMobilePanel('watermark')}>Watermark</button>
+        <button className={mobilePanel === 'parameters' ? 'active' : ''} onClick={() => setMobilePanel('parameters')}>Parameters</button>
+      </div>
+
       {/* Main layout */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '260px 1fr 260px', overflow: 'hidden' }}>
+      <div className="main-grid">
 
         {/* Left controls panel — watermark type / content */}
-        <div style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className={`panel-left${mobilePanel !== 'watermark' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
 
           {/* Panel header */}
           <div style={{ flexShrink: 0, padding: '8px 14px', background: t.bgRaised, borderBottom: `1px solid ${t.border}` }}>
@@ -1062,10 +1070,12 @@ export default function App() {
         </div>
 
         {/* Canvas preview */}
-        <WatermarkCanvas config={config} bgImage={bgImage} onBgImageChange={setBgImage} bgUploadError={bgUploadError} onBgUploadError={setBgUploadError} onBgFitChange={(v) => update('bgFit', v)} onBgColorChange={(v) => update('bgColor', v)} />
+        <div className="panel-canvas">
+          <WatermarkCanvas config={config} bgImage={bgImage} onBgImageChange={setBgImage} bgUploadError={bgUploadError} onBgUploadError={setBgUploadError} onBgFitChange={(v) => update('bgFit', v)} onBgColorChange={(v) => update('bgColor', v)} />
+        </div>
 
         {/* Right controls panel — canvas size, parameters, options */}
-        <div style={{ background: t.bgSurface, borderLeft: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className={`panel-right${mobilePanel !== 'parameters' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderLeft: `1px solid ${t.border}` }}>
 
           {/* Panel header */}
           <div style={{ flexShrink: 0, padding: '8px 14px', background: t.bgRaised, borderBottom: `1px solid ${t.border}` }}>
@@ -1180,8 +1190,8 @@ export default function App() {
 
           </div>
 
-          {/* Export button */}
-          <div style={{ flexShrink: 0, padding: '10px 12px', borderTop: `1px solid ${t.border}`, background: t.bgSurface }}>
+          {/* Export button — hidden on mobile */}
+          <div className="desktop-export" style={{ flexShrink: 0, padding: '10px 12px', borderTop: `1px solid ${t.border}`, background: t.bgSurface }}>
             <GreenButton onClick={download} fullWidth disabled={downloading}>
               {downloading ? 'Exporting...' : 'Export PNG'}
             </GreenButton>
@@ -1189,6 +1199,14 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* Export button pinned at bottom on mobile */}
+      <div className="mobile-export">
+        <GreenButton onClick={download} fullWidth disabled={downloading}>
+          {downloading ? 'Exporting...' : 'Export PNG'}
+        </GreenButton>
+      </div>
+
     </div>
   )
 }

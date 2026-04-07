@@ -151,3 +151,113 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
   background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
   background-color: var(--color-bg-raised);
 }
+
+/* ─── Responsive layout ──────────────────────────────────────────────────────── */
+
+/* Desktop: three-column grid, single screen */
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr 260px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.panel-left  { display: flex; flex-direction: column; overflow: hidden; }
+.panel-right { display: flex; flex-direction: column; overflow: hidden; }
+.panel-canvas { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+.mobile-tabs  { display: none; }
+.mobile-export { display: none; }
+
+/* Mobile: stack vertically */
+@media (max-width: 768px) {
+  .app-shell {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .main-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+
+  /* Canvas sits in a fixed-height top zone */
+  .panel-canvas {
+    grid-row: 1;
+    height: 42dvh;
+    min-height: 200px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Both panels stack into the second row, toggled by .hidden */
+  .panel-left,
+  .panel-right {
+    grid-row: 2;
+    grid-column: 1;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .panel-left.hidden,
+  .panel-right.hidden {
+    display: none;
+  }
+
+  /* Tab bar shown on mobile */
+  .mobile-tabs {
+    display: flex;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-raised);
+  }
+
+  .mobile-tabs button {
+    flex: 1;
+    padding: 9px 0;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    font-family: Arial, Helvetica, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .mobile-tabs button.active {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+
+  /* Export button pinned at bottom on mobile */
+  .mobile-export {
+    display: block;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-bg-surface);
+  }
+
+  /* Hide desktop-only export button footer inside right panel on mobile */
+  .desktop-export {
+    display: none;
+  }
+
+  /* Tighten header on mobile */
+  .header-subtitle {
+    display: none;
+  }
+}
