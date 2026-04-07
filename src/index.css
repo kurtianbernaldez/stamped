@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+/* ─── Design tokens ────────────────────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --color-accent:        #81d8d0;  /* Tiffany blue — borders, highlights, accents */
+  --color-accent-light:  #b2ebe7;  /* Light tiffany — hover highlights */
+  --color-accent-hover:  #4fc3ba;  /* Darker tiffany — button hover fill */
+  --color-accent-active: #2da099;  /* Deep tiffany — button active fill */
+  --color-slider-thumb:  #dbf5f0;  /* Baby blue — slider thumb + number input value */
+
+  /* Backgrounds */
+  --color-bg:            #000000;  /* Page background */
+  --color-bg-surface:    #0a0a0a;  /* Panels, inputs */
+  --color-bg-raised:     #1a1a1a;  /* Panel headers, cards */
+  --color-bg-check:      #2a2a2a;  /* Checkerboard tile */
+
+  /* Text */
+  --color-text:          #ffffff;  /* Primary text on dark */
+  --color-text-muted:    #a7a7a7;  /* Secondary / label text */
+  --color-text-subtle:   #757575;  /* Tertiary / footer text */
+  --color-text-disabled: #898989;  /* Disabled / remove links */
+
+  /* Borders */
+  --color-border:        #5e5e5e;  /* Default border */
+  --color-border-strong: #81d8d0;  /* Accent border (same as --color-accent) */
+
+  /* Checkbox tick on checked bg */
+  --color-check-tick:    #000000;
+
+  /* Radius */
+  --radius:              2px;
+
+  /* Shadows */
+  --shadow-card: rgba(0, 0, 0, 0.4) 0px 0px 8px 0px;
+}
+
+/* ─── Reset ─────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: var(--color-bg-raised); }
+::-webkit-scrollbar-thumb  { background: var(--color-border); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+
+/* ─── Range input ────────────────────────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: var(--color-border);
+  outline: none;
+  border-radius: 0;
+  cursor: pointer;
+  width: 100%;
+  display: block;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--color-slider-thumb);
+  border-radius: 0;
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-slider-thumb);
+  border-radius: 0;
+  border: none;
+  cursor: pointer;
+}
+
+/* ─── Checkbox ───────────────────────────────────────────────────────────────── */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  background: transparent;
+  border-radius: 0;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+input[type="checkbox"]:checked {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 5px;
+  height: 9px;
+  border: 2px solid var(--color-check-tick);
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+/* ─── Number input spinners ──────────────────────────────────────────────────── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  opacity: 1;
+}
+/* Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ─── Color input ────────────────────────────────────────────────────────────── */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 2px solid var(--color-border);
+  border-radius: 0;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
+
+/* ─── Transparent canvas checkerboard ───────────────────────────────────────── */
+.canvas-checkerboard {
+  background-image:
+    linear-gradient(45deg, var(--color-bg-check) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--color-bg-check) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--color-bg-check) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-bg-check) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  background-color: var(--color-bg-raised);
+}
