@@ -198,6 +198,7 @@ interface WatermarkConfig {
   canvasWidth: number
   canvasHeight: number
   transparentBg: boolean
+  bgColor: string
   stagger: boolean
   mirrorH: boolean
   mirrorV: boolean
@@ -222,6 +223,7 @@ const DEFAULT_CONFIG: WatermarkConfig = {
   canvasWidth: 800,
   canvasHeight: 600,
   transparentBg: false,
+  bgColor: '#ffffff',
   stagger: false,
   mirrorH: false,
   mirrorV: false,
@@ -629,13 +631,14 @@ function FitToggle({ value, options, onChange }: {
   )
 }
 
-function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBgUploadError, onBgFitChange }: {
+function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBgUploadError, onBgFitChange, onBgColorChange }: {
   config: WatermarkConfig
   bgImage: HTMLImageElement | null
   onBgImageChange: (img: HTMLImageElement | null) => void
   bgUploadError: string | null
   onBgUploadError: (msg: string | null) => void
   onBgFitChange: (fit: ObjectFit) => void
+  onBgColorChange: (color: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [watermarkImage, setWatermarkImage] = useState<HTMLImageElement | null>(null)
@@ -664,7 +667,7 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
       if (bgImage) {
         drawImageFitted(ctx, bgImage, 0, 0, canvas.width, canvas.height, config.bgFit)
       } else {
-        ctx.fillStyle = '#ffffff'
+        ctx.fillStyle = config.bgColor
         ctx.fillRect(0, 0, canvas.width, canvas.height)
       }
     }
@@ -719,6 +722,21 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
           <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
             Background
           </span>
+          {!config.transparentBg && (
+            <>
+              <input type="color" value={config.bgColor} onChange={(e) => onBgColorChange(e.target.value)}
+                style={{ width: 28, height: 24, padding: 0, border: `1px solid ${t.border}`, borderRadius: t.radius, cursor: 'pointer', flexShrink: 0 }} />
+              <div style={{ display: 'flex', gap: 3 }}>
+                {['#ffffff', '#000000', '#f5f5f5', '#1a1a1a', '#e8f4f8', '#fff8e1', '#fce4ec', '#e8f5e9'].map((c) => (
+                  <button key={c} title={c} onClick={() => onBgColorChange(c)} style={{
+                    width: 16, height: 16, background: c, padding: 0, flexShrink: 0,
+                    border: config.bgColor === c ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                    borderRadius: 0, cursor: 'pointer',
+                  }} />
+                ))}
+              </div>
+            </>
+          )}
           <label
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -833,7 +851,7 @@ export default function App() {
         if (bgImage) {
           drawImageFitted(ctx, bgImage, 0, 0, canvas.width, canvas.height, config.bgFit)
         } else {
-          ctx.fillStyle = '#ffffff'
+          ctx.fillStyle = config.bgColor
           ctx.fillRect(0, 0, canvas.width, canvas.height)
         }
       }
@@ -1044,7 +1062,7 @@ export default function App() {
         </div>
 
         {/* Canvas preview */}
-        <WatermarkCanvas config={config} bgImage={bgImage} onBgImageChange={setBgImage} bgUploadError={bgUploadError} onBgUploadError={setBgUploadError} onBgFitChange={(v) => update('bgFit', v)} />
+        <WatermarkCanvas config={config} bgImage={bgImage} onBgImageChange={setBgImage} bgUploadError={bgUploadError} onBgUploadError={setBgUploadError} onBgFitChange={(v) => update('bgFit', v)} onBgColorChange={(v) => update('bgColor', v)} />
 
         {/* Right controls panel — canvas size, parameters, options */}
         <div style={{ background: t.bgSurface, borderLeft: `1px solid ${t.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
