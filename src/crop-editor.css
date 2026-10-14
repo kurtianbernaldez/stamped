@@ -3,18 +3,23 @@
   inset: 0;
   z-index: 1000;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 20px;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(5px);
 }
 
 .crop-dialog {
   width: min(960px, 100%);
-  max-height: min(900px, calc(100dvh - 40px));
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
+  height: min(900px, calc(100dvh - 40px));
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
   color: var(--color-text);
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border);
@@ -70,9 +75,13 @@
 }
 
 .crop-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
   padding: 16px 22px 20px;
   background: #111;
+  overflow: hidden;
 }
 
 .crop-preview-topline {
@@ -88,14 +97,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 120px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  container-type: size;
 }
 
 .crop-stage {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
-  max-height: min(52dvh, 540px);
+  width: min(100cqw, calc(100cqh * var(--crop-aspect)));
+  aspect-ratio: var(--crop-aspect);
   overflow: hidden;
   line-height: 0;
   cursor: crosshair;
@@ -105,10 +117,8 @@
 
 .crop-stage > img {
   display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: min(52dvh, 540px);
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   user-select: none;
 }
@@ -161,6 +171,7 @@
 .crop-handle-w  { left: 0; top: 50%; cursor: ew-resize; }
 
 .crop-controls {
+  min-height: 0;
   padding: 18px 22px 14px;
 }
 
@@ -286,10 +297,58 @@
 
 @media (max-width: 600px) {
   .crop-overlay { padding: 8px; }
-  .crop-dialog { max-height: calc(100dvh - 16px); }
+  .crop-dialog { height: calc(100dvh - 16px); }
   .crop-header, .crop-preview, .crop-controls, .crop-footer { padding-left: 14px; padding-right: 14px; }
   .crop-preview-topline { flex-direction: column; gap: 2px; }
-  .crop-stage, .crop-stage > img { max-height: 37dvh; }
   .crop-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .crop-controls-heading { align-items: flex-start; }
+}
+
+@media (max-height: 650px) {
+  .crop-overlay { padding: 6px; }
+  .crop-dialog { height: calc(100dvh - 12px); }
+  .crop-header { padding-top: 6px; padding-bottom: 6px; }
+  .crop-header h2 { font-size: 16px; }
+  .crop-eyebrow { display: none; }
+  .crop-close { width: 30px; height: 30px; }
+  .crop-preview { padding-top: 7px; padding-bottom: 7px; }
+  .crop-preview-topline { margin-bottom: 5px; font-size: 10px; }
+  .crop-preview-topline span:first-child { display: none; }
+  .crop-controls { padding-top: 8px; padding-bottom: 7px; }
+  .crop-controls-heading { margin-bottom: 7px; }
+  .crop-controls-heading > div:first-child span { display: none; }
+  .crop-reset { padding: 6px 8px; }
+  .crop-fields { gap: 6px; }
+  .crop-field { gap: 2px; }
+  .crop-field input { padding: 6px 7px; }
+  .crop-result { display: none; }
+  .crop-footer { padding-top: 6px; padding-bottom: 6px; }
+  .crop-cancel, .crop-apply { padding: 7px 10px; }
+}
+
+@media (max-height: 450px) and (min-width: 500px) {
+  .crop-dialog {
+    grid-template-columns: minmax(0, 1fr) minmax(210px, .7fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+  .crop-header, .crop-footer { grid-column: 1 / -1; }
+  .crop-preview { grid-column: 1; grid-row: 2; padding: 7px; }
+  .crop-preview-topline { display: none; }
+  .crop-controls { grid-column: 2; grid-row: 2; padding: 7px; }
+  .crop-controls-heading > div:first-child { display: none; }
+  .crop-controls-heading { justify-content: flex-end; margin-bottom: 6px; }
+  .crop-controls-heading > .crop-actions { flex-direction: row; flex-wrap: nowrap; gap: 4px; }
+  .crop-reset { padding: 5px 6px; font-size: 11px; }
+  .crop-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .crop-footer { grid-row: 3; }
+}
+
+@media (max-height: 400px) and (max-width: 499px) {
+  .crop-preview-topline { display: none; }
+  .crop-controls-heading > div:first-child { display: none; }
+  .crop-controls-heading { justify-content: flex-end; margin-bottom: 5px; }
+  .crop-controls-heading > .crop-actions { flex-direction: row; flex-wrap: nowrap; gap: 4px; }
+  .crop-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .crop-field input { padding: 5px 3px; font-size: 12px; }
+  .crop-field-input > span { padding-right: 4px; }
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import './crop-editor.css'
 
 /** Coordinates are fractions of the image's natural width and height. */
@@ -248,6 +248,7 @@ export function CropEditor({ image, crop, onApply, onClose }: CropEditorProps) {
             <div
               className="crop-stage canvas-checkerboard"
               ref={stageRef}
+              style={{ '--crop-aspect': size.width / size.height } as CSSProperties}
               onPointerDown={(event) => startDrag(event, 'create')}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}

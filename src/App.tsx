@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useId } from 'react'
+import { createPortal } from 'react-dom'
 import './index.css'
 import { t } from './theme'
 import { CropEditor } from './CropEditor'
@@ -170,13 +171,10 @@ const DEFAULT_CONFIG: WatermarkConfig = {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      fontSize: 11, fontWeight: 700,
-      color: t.accent,
-      textTransform: 'uppercase' as const,
-      letterSpacing: '0.12em',
-      marginBottom: 10,
-      paddingBottom: 8,
-      borderBottom: `1px solid ${t.border}`,
+      fontSize: 14, fontWeight: 700,
+      color: t.text,
+      letterSpacing: '0.01em',
+      marginBottom: 7,
     }}>
       {children}
     </div>
@@ -186,11 +184,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      fontSize: 11, fontWeight: 700,
+      fontSize: 10, fontWeight: 700,
       color: t.textMuted,
       textTransform: 'uppercase' as const,
       letterSpacing: '0.05em',
-      marginBottom: 5,
+      marginBottom: 4,
     }}>
       {children}
     </div>
@@ -214,7 +212,7 @@ function NvidiaInput({ value, onChange, placeholder, ariaLabel }: {
         background: t.bgSurface,
         border: `1px solid ${t.border}`,
         borderRadius: t.radius,
-        padding: '9px 11px',
+        padding: '7px 10px',
         color: t.text,
         fontSize: 14,
         fontWeight: 400,
@@ -259,7 +257,7 @@ function DimensionInput({ label, value, onChange }: {
         onChange={(event) => setDraft({ source: value, text: event.target.value })}
         onBlur={commit}
         onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
-        style={{ width: '100%', background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: t.radius, padding: '9px 11px', color: t.text, fontSize: 14, fontFamily: 'Arial, Helvetica, sans-serif' }}
+        style={{ width: '100%', background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: t.radius, padding: '7px 10px', color: t.text, fontSize: 14, fontFamily: 'Arial, Helvetica, sans-serif' }}
       />
     </div>
   )
@@ -289,9 +287,9 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <label htmlFor={inputId} style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.05em', flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, minWidth: 0 }}>
+        <label htmlFor={inputId} style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.02em', minWidth: 0, whiteSpace: 'nowrap' }}>
           {label}
         </label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
@@ -306,14 +304,14 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
             onFocus={(e) => (e.target.style.borderColor = t.accent)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit((e.target as HTMLInputElement).value) }}
             style={{
-              width: 62,
+              width: 50,
               background: t.bgSurface,
               border: `1px solid ${t.border}`,
               borderRight: 'none',
               borderRadius: `${t.radius} 0 0 ${t.radius}`,
-              padding: '3px 6px',
+              padding: '2px 4px',
               color: t.sliderThumb,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 700,
               fontFamily: 'monospace',
               outline: 'none',
@@ -325,8 +323,8 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
             background: t.bgRaised,
             border: `1px solid ${t.border}`,
             borderRadius: `0 ${t.radius} ${t.radius} 0`,
-            padding: '3px 6px',
-            fontSize: 11,
+            padding: '2px 4px',
+            fontSize: 10,
             fontWeight: 700,
             color: t.textMuted,
             fontFamily: 'monospace',
@@ -349,9 +347,9 @@ function CheckboxRow({ id, label, checked, onChange }: {
   onChange: (v: boolean) => void
 }) {
   return (
-    <label htmlFor={id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' as const }}>
+    <label htmlFor={id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' as const }}>
       <input type="checkbox" id={id} checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>
         {label}
       </span>
     </label>
@@ -405,110 +403,80 @@ function GreenButton({ onClick, children, fullWidth = false, disabled = false }:
 function FontSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
   const selectedLabel = FONT_OPTIONS.find(f => f.value === value)?.label ?? 'Arial'
-  const filtered = query.trim()
+  const matches = query.trim()
     ? FONT_OPTIONS.filter(f => f.label.toLowerCase().includes(query.toLowerCase()))
-    : FONT_OPTIONS
+    : [FONT_OPTIONS.find(f => f.value === value) ?? FONT_OPTIONS[0], ...FONT_OPTIONS.filter(f => f.value !== value)]
+  const visibleFonts = matches.slice(0, 5)
 
   useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery('')
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    if (open) inputRef.current?.focus()
   }, [open])
 
-  const handleOpen = () => {
-    setOpen(true)
+  const close = () => {
+    setOpen(false)
     setQuery('')
-    setTimeout(() => inputRef.current?.focus(), 0)
+    setActiveIndex(0)
+    triggerRef.current?.focus()
+  }
+
+  const choose = (font: typeof FONT_OPTIONS[number]) => {
+    onChange(font.value)
+    close()
   }
 
   return (
-    <div ref={containerRef} style={{ position: 'relative' }} onKeyDown={(event) => {
-      if (event.key === 'Escape' && open) { setOpen(false); setQuery('') }
-    }}>
-      {/* Trigger */}
+    <div>
       <button
-        onClick={() => open ? setOpen(false) : handleOpen()}
+        ref={triggerRef}
+        type="button"
+        onClick={() => { setOpen(true); setQuery(''); setActiveIndex(0) }}
         aria-expanded={open}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-label={`Font: ${selectedLabel}`}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: t.bgSurface, border: `1px solid ${open ? t.accent : t.border}`,
-          borderRadius: t.radius, padding: '9px 11px', paddingRight: 10,
+          borderRadius: t.radius, padding: '7px 10px',
           color: t.text, fontSize: 13, fontWeight: 700, fontFamily: value,
           cursor: 'pointer', textAlign: 'left',
-          transition: 'border-color 0.15s',
         }}
       >
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedLabel}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke={t.accent} strokeWidth="2" style={{ flexShrink: 0, marginLeft: 6,
-          transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
+        <span aria-hidden="true" style={{ color: t.accent, marginLeft: 8 }}>⌄</span>
       </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100,
-          background: t.bgSurface, border: `1px solid ${t.accent}`,
-          borderRadius: t.radius, overflow: 'hidden',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+      {open && createPortal(<div className="font-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close() }}>
+        <div className="font-dialog" role="dialog" aria-modal="true" aria-label="Choose font" onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); close() }
+          if (event.key === 'Tab') {
+            if (event.shiftKey && document.activeElement === inputRef.current) { event.preventDefault(); closeRef.current?.focus() }
+            if (!event.shiftKey && document.activeElement === closeRef.current) { event.preventDefault(); inputRef.current?.focus() }
+          }
         }}>
-          {/* Search input */}
-          <div style={{ padding: '7px 8px', borderBottom: `1px solid ${t.border}` }}>
-            <input
-              ref={inputRef}
-              value={query}
-               aria-label="Search fonts"
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search fonts..."
-              style={{
-                width: '100%',                 background: t.bg, border: `1px solid ${t.border}`,
-                borderRadius: t.radius, padding: '5px 8px',
-                color: t.text, fontSize: 12, fontFamily: 'Arial, Helvetica, sans-serif' as string,
-                outline: 'none', boxSizing: 'border-box',
-              }}
-              onFocus={e => (e.target.style.borderColor = t.accent)}
-              onBlur={e => (e.target.style.borderColor = t.border)}
-            />
+          <div className="font-dialog-heading">Choose font <span>{FONT_OPTIONS.length} available</span></div>
+          <input ref={inputRef} role="combobox" aria-label="Search fonts" aria-expanded="true" aria-controls="font-options"
+            aria-autocomplete="list" aria-activedescendant={visibleFonts.length ? `font-option-${activeIndex}` : undefined}
+            value={query} placeholder="Search by font name" onChange={(event) => { setQuery(event.target.value); setActiveIndex(0) }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, visibleFonts.length - 1)) }
+              if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)) }
+              if (event.key === 'Enter' && visibleFonts[activeIndex]) { event.preventDefault(); choose(visibleFonts[activeIndex]) }
+            }} />
+          <div id="font-options" role="listbox" aria-label="Matching fonts" className="font-options">
+            {visibleFonts.length ? visibleFonts.map((font, index) => <button key={font.value} id={`font-option-${index}`}
+              type="button" role="option" tabIndex={-1} aria-selected={index === activeIndex}
+              className={index === activeIndex ? 'active' : ''} style={{ fontFamily: font.value }}
+              onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(font)}>{font.label}</button>)
+              : <div className="settings-note">No matching fonts. Try a shorter name.</div>}
           </div>
-          {/* Options list */}
-           <div role="listbox" aria-label="Fonts" style={{ maxHeight: 200, overflowY: 'auto' }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '10px 12px', color: t.textMuted, fontSize: 12 }}>No fonts found</div>
-            ) : filtered.map(f => (
-              <button
-                key={f.value}
-                 role="option"
-                 aria-selected={f.value === value}
-                onClick={() => { onChange(f.value); setOpen(false); setQuery('') }}
-                style={{
-                  width: '100%', display: 'block', textAlign: 'left',
-                  padding: '8px 12px', background: f.value === value ? t.accentHover : 'transparent',
-                  border: 'none', color: f.value === value ? t.accent : t.text,
-                  fontSize: 13, fontWeight: 600, fontFamily: f.value,
-                  cursor: 'pointer', transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => { if (f.value !== value) e.currentTarget.style.background = t.accentHover }}
-                onMouseLeave={e => { if (f.value !== value) e.currentTarget.style.background = 'transparent' }}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <div className="font-dialog-footer"><span>{matches.length > 5 ? 'Keep typing to narrow results' : '↑ ↓ to choose · Enter to apply'}</span>
+            <button ref={closeRef} type="button" className="utility-button" onClick={close}>Cancel</button></div>
         </div>
-      )}
+      </div>, document.body)}
     </div>
   )
 }
@@ -561,19 +529,11 @@ function FitToggle({ label, value, options, onChange }: {
   )
 }
 
-function WatermarkCanvas({ config, bgImage, watermarkImage, onBgFileSelect, onBgImageRemove, onEditBgCrop, onPlacementChange, bgUploadError, bgLoading, busy, onBgFitChange, onBgColorChange }: {
+function WatermarkCanvas({ config, bgImage, watermarkImage, onPlacementChange }: {
   config: WatermarkConfig
   bgImage: HTMLImageElement | null
   watermarkImage: HTMLImageElement | null
-  onBgFileSelect: (file: File) => Promise<void>
-  onBgImageRemove: () => void
-  onEditBgCrop: () => void
   onPlacementChange: (start: WatermarkConfig, dx: number, dy: number) => void
-  bgUploadError: string | null
-  bgLoading: boolean
-  busy: boolean
-  onBgFitChange: (fit: ObjectFit) => void
-  onBgColorChange: (color: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragRef = useRef<{ pointerId: number; x: number; y: number; config: WatermarkConfig } | null>(null)
@@ -646,7 +606,18 @@ function WatermarkCanvas({ config, bgImage, watermarkImage, onBgFileSelect, onBg
         <canvas
           ref={canvasRef}
           className={config.transparentBg ? 'canvas-checkerboard' : ''}
-          aria-label="Watermark preview. Drag to move the watermark."
+          tabIndex={0}
+          aria-label="Watermark preview. Drag or use arrow keys to move the watermark; hold Shift for larger steps."
+          onKeyDown={(event) => {
+            const step = event.shiftKey ? 10 : 1
+            const directions: Record<string, [number, number]> = {
+              ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+            }
+            const delta = directions[event.key]
+            if (!delta) return
+            event.preventDefault()
+            onPlacementChange(config, delta[0], delta[1])
+          }}
           onPointerDown={(event) => {
             if (event.button !== 0 && event.pointerType !== 'touch') return
             if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
@@ -695,110 +666,6 @@ function WatermarkCanvas({ config, bgImage, watermarkImage, onBgFileSelect, onBg
         {previewError && <div role="alert" style={{ position: 'absolute', left: 24, right: 24, bottom: 24, padding: 10, borderRadius: t.radius, background: t.bgSurface, color: '#ff6b6b', fontSize: 12, textAlign: 'center' }}>{previewError}</div>}
       </div>
 
-      {/* Bottom bar: background upload + spec strip */}
-      <div style={{ flexShrink: 0, borderTop: `1px solid ${t.border}`, background: t.bgSurface }}>
-
-        {/* Background upload */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: '7px 14px',
-          borderBottom: `1px solid ${t.border}`,
-          flexWrap: 'wrap' as const,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-            Background
-          </span>
-          {!config.transparentBg && (
-            <>
-              <input type="color" aria-label="Background color" value={config.bgColor} onChange={(e) => onBgColorChange(e.target.value)}
-                style={{ width: 28, height: 24, padding: 0, border: `1px solid ${t.border}`, borderRadius: t.radius, cursor: 'pointer', flexShrink: 0 }} />
-              <div style={{ display: 'flex', gap: 3 }}>
-                {['#ffffff', '#000000', '#f5f5f5', '#1a1a1a', '#e8f4f8', '#fff8e1', '#fce4ec', '#e8f5e9'].map((c) => (
-                   <button key={c} title={c} aria-label={`Background color ${c}`} onClick={() => onBgColorChange(c)} style={{
-                    width: 16, height: 16, background: c, padding: 0, flexShrink: 0,
-                    border: config.bgColor === c ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
-                    borderRadius: 0, cursor: 'pointer',
-                  }} />
-                ))}
-              </div>
-            </>
-          )}
-          <label className="file-upload"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              cursor: 'pointer', padding: '4px 10px',
-              border: `1px solid ${t.accent}`, borderRadius: t.radius,
-              fontSize: 11, fontWeight: 700, color: t.text,
-              background: 'transparent', transition: 'background 0.15s',
-              textTransform: 'uppercase', letterSpacing: '0.05em',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = t.accentHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            Upload
-              <input type="file" accept="image/*" className="file-input" aria-label="Upload background image" disabled={busy} onChange={(e) => {
-                const file = e.target.files?.[0]
-                e.target.value = ''
-                if (file) void onBgFileSelect(file)
-            }} />
-          </label>
-          {bgLoading && <span role="status" style={{ fontSize: 11, color: t.textMuted }}>Loading image…</span>}
-          {bgUploadError && (
-            <span style={{ fontSize: 11, color: '#ff6b6b', fontWeight: 700 }}>{bgUploadError}</span>
-          )}
-          {bgImage && (
-            <>
-              <span style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>&#10003; Loaded</span>
-              <button onClick={onEditBgCrop} className="utility-button" disabled={bgLoading || busy}>Crop</button>
-              <button onClick={onBgImageRemove} disabled={busy} style={{ fontSize: 11, color: t.textDisabled, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: 0 }}>
-                Remove
-              </button>
-            </>
-          )}
-          {bgImage && (
-            <div style={{ marginLeft: 'auto' }}>
-              <FitToggle
-                 label="Background fit"
-                value={config.bgFit}
-                options={[
-                  { label: 'Cover',   value: 'cover'   },
-                  { label: 'Contain', value: 'contain' },
-                  { label: 'Fill',    value: 'fill'    },
-                  { label: 'None',    value: 'none'    },
-                ]}
-                onChange={onBgFitChange}
-              />
-            </div>
-          )}
-          {config.transparentBg && <span style={{ fontSize: 11, color: t.textMuted }}>Hidden in transparent PNG</span>}
-        </div>
-
-        {/* Spec strip */}
-         <div className="preview-specs" style={{
-          display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
-        }}>
-          {[
-            { label: 'Type',     value: config.type.toUpperCase() },
-            { label: 'Size',     value: `${config.fontSize}px` },
-            { label: 'Opacity',  value: `${Math.round(config.opacity * 100)}%` },
-            { label: 'Rotation', value: `${config.rotation}°` },
-            { label: 'Position', value: config.mode === 'single' ? `${Math.round(config.posX)}%, ${Math.round(config.posY)}%` : `${Math.round(config.tileOffsetX)}px, ${Math.round(config.tileOffsetY)}px` },
-          ].map((item, i) => (
-            <div key={item.label} style={{
-              padding: '7px 12px',
-              borderLeft: i > 0 ? `1px solid ${t.border}` : 'none',
-            }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>
-                {item.label}
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, fontFamily: 'monospace' }}>
-                {item.value}
-              </div>
-            </div>
-          ))}
-        </div>
-
-      </div>
     </div>
   )
 }
@@ -986,11 +853,14 @@ export default function App() {
     }
   }
 
-  const [mobilePanel, setMobilePanel] = useState<'watermark' | 'parameters'>('watermark')
+  const [activeTab, setActiveTab] = useState<'source' | 'layout' | 'style' | 'canvas'>('source')
+  const [canvasView, setCanvasView] = useState<'size' | 'background'>('size')
+  const [colorOpen, setColorOpen] = useState(false)
+  const [shortPreview, setShortPreview] = useState(false)
   const exportTooLarge = config.canvasWidth * config.canvasHeight > 32_000_000
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${shortPreview ? ' show-short-preview' : ''}`}>
 
       {/* Header */}
       <header style={{ flexShrink: 0, background: t.bg, borderBottom: `2px solid ${t.accent}`, zIndex: 50 }}>
@@ -1011,82 +881,53 @@ export default function App() {
               </span>
             </div>
           </div>
+          <button type="button" className="short-preview-toggle" aria-pressed={shortPreview} onClick={() => setShortPreview((shown) => !shown)}>
+            {shortPreview ? 'Settings' : 'Preview'}
+          </button>
         </div>
       </header>
 
-      {/* Mobile tab bar */}
-      <div className="mobile-tabs">
-        <button className={mobilePanel === 'watermark' ? 'active' : ''} aria-pressed={mobilePanel === 'watermark'} onClick={() => setMobilePanel('watermark')}>Watermark</button>
-        <button className={mobilePanel === 'parameters' ? 'active' : ''} aria-pressed={mobilePanel === 'parameters'} onClick={() => setMobilePanel('parameters')}>Parameters</button>
+      <div className="workspace-tabs" role="tablist" aria-label="Editor controls" onKeyDown={(event) => {
+        const tabs = ['source', 'layout', 'style', 'canvas'] as const
+        const current = tabs.indexOf(activeTab)
+        const next = event.key === 'ArrowRight' ? (current + 1) % tabs.length
+          : event.key === 'ArrowLeft' ? (current + tabs.length - 1) % tabs.length
+          : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1
+        if (next < 0) return
+        event.preventDefault()
+        setActiveTab(tabs[next])
+        setColorOpen(false)
+        setShortPreview(false)
+        event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+      }}>
+        {(['source', 'layout', 'style', 'canvas'] as const).map((tab) => (
+          <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} aria-controls={tab === 'source' ? 'source-settings' : 'detail-settings'}
+            tabIndex={activeTab === tab ? 0 : -1}
+            className={activeTab === tab ? 'active' : ''} onClick={() => { setActiveTab(tab); setColorOpen(false); setShortPreview(false) }}>
+            {tab === 'source' ? 'Watermark' : tab}
+          </button>
+        ))}
       </div>
 
       {/* Main layout */}
       <div className="main-grid">
 
         {/* Left controls panel — watermark type / content */}
-        <div className={`panel-left${mobilePanel !== 'watermark' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
-
-          {/* Panel header */}
-          <div style={{ flexShrink: 0, padding: '8px 14px', background: t.bgRaised, borderBottom: `1px solid ${t.border}` }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: t.text, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Watermark
-            </span>
-          </div>
-
-          {/* Scrollable content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div id="source-settings" role="tabpanel" aria-label="Watermark settings" className={`panel-left${activeTab !== 'source' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
+          <div className="settings-content">
 
             {/* Type toggle */}
             <div>
-              <SectionLabel>Watermark Type</SectionLabel>
-              <div style={{ display: 'flex' }}>
-                {(['text', 'image'] as const).map((tp, i) => (
+              <SectionLabel>Watermark</SectionLabel>
+              <div className="segmented-row" role="group" aria-label="Watermark type">
+                {(['text', 'image'] as const).map((tp) => (
                   <button
                     key={tp}
+                    type="button"
                     onClick={() => update('type', tp)}
                     aria-pressed={config.type === tp}
-                    style={{
-                      flex: 1, padding: '7px 13px',
-                      background: config.type === tp ? t.accent : 'transparent',
-                      border: `2px solid ${t.accent}`,
-                      borderLeft: i > 0 ? 'none' : `2px solid ${t.accent}`,
-                      borderRadius: i === 0 ? `${t.radius} 0 0 ${t.radius}` : `0 ${t.radius} ${t.radius} 0`,
-                      color: config.type === tp ? '#000000' : t.text,
-                      fontSize: 12, fontWeight: 700,
-                      fontFamily: 'Arial, Helvetica, sans-serif',
-                      cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
-                      transition: 'all 0.15s',
-                    }}
                   >
-                    {tp}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Mode toggle */}
-            <div>
-              <SectionLabel>Mode</SectionLabel>
-              <div style={{ display: 'flex' }}>
-                {(['tiled', 'single'] as const).map((m, i) => (
-                  <button
-                    key={m}
-                    onClick={() => update('mode', m)}
-                    aria-pressed={config.mode === m}
-                    style={{
-                      flex: 1, padding: '7px 13px',
-                      background: config.mode === m ? t.accent : 'transparent',
-                      border: `2px solid ${t.accent}`,
-                      borderLeft: i > 0 ? 'none' : `2px solid ${t.accent}`,
-                      borderRadius: i === 0 ? `${t.radius} 0 0 ${t.radius}` : `0 ${t.radius} ${t.radius} 0`,
-                      color: config.mode === m ? '#000000' : t.text,
-                      fontSize: 12, fontWeight: 700,
-                      fontFamily: 'Arial, Helvetica, sans-serif',
-                      cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {m}
+                    {tp === 'text' ? 'Text' : 'Image'}
                   </button>
                 ))}
               </div>
@@ -1094,8 +935,7 @@ export default function App() {
 
             {/* Text options */}
             {config.type === 'text' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <SectionLabel>Text Options</SectionLabel>
+              <div className="settings-section">
                 <div>
                   <FieldLabel>Watermark Text</FieldLabel>
                   <NvidiaInput value={config.text} onChange={(v) => update('text', v)} placeholder="Enter watermark text" ariaLabel="Watermark text" />
@@ -1106,20 +946,13 @@ export default function App() {
                 </div>
                 <div>
                   <FieldLabel>Text Color</FieldLabel>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <input type="color" aria-label="Text color" value={config.textColor} onChange={(e) => update('textColor', e.target.value)} style={{ width: 34, height: 30 }} />
-                    <span style={{ fontSize: 11, color: t.textMuted, fontFamily: 'monospace', fontWeight: 700 }}>
-                      {config.textColor.toUpperCase()}
-                    </span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
-                    {TEXT_COLOR_SWATCHES.map((c) => (
-                      <button key={c} title={c} aria-label={`Text color ${c}`} onClick={() => update('textColor', c)} style={{
-                        aspectRatio: '1', width: '100%', background: c, padding: 0,
-                        border: config.textColor === c ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
-                        borderRadius: 0, cursor: 'pointer',
-                      }} />
+                  <div className="color-row">
+                    <input type="color" aria-label="Text color" value={config.textColor} onChange={(e) => update('textColor', e.target.value)} />
+                    {[SWATCH_BLACK, SWATCH_WHITE, SWATCH_GRAY, SWATCH_RED, SWATCH_TIFFANY, SWATCH_BLUE].map((color) => (
+                      <button key={color} type="button" className="color-swatch" title={color} aria-label={`Text color ${color}`}
+                        aria-pressed={config.textColor === color} onClick={() => update('textColor', color)} style={{ background: color }} />
                     ))}
+                    <button type="button" className="palette-button" onClick={() => setColorOpen((open) => !open)} aria-expanded={colorOpen}>More</button>
                   </div>
                 </div>
               </div>
@@ -1180,6 +1013,16 @@ export default function App() {
               </div>
             )}
 
+            {config.type === 'text' && colorOpen && <div className="color-popover" role="group" aria-label="All text colors">
+              <div className="popover-heading"><span>Color palette</span><button type="button" className="utility-button" onClick={() => setColorOpen(false)}>Close</button></div>
+              <div className="palette-grid">
+                {TEXT_COLOR_SWATCHES.map((color) => (
+                  <button key={color} type="button" className="color-swatch" title={color} aria-label={`Text color ${color}`}
+                    aria-pressed={config.textColor === color} onClick={() => { update('textColor', color); setColorOpen(false) }} style={{ background: color }} />
+                ))}
+              </div>
+            </div>}
+
           </div>
         </div>
 
@@ -1189,32 +1032,19 @@ export default function App() {
             config={config}
             bgImage={bgImage}
             watermarkImage={watermarkImage}
-            onBgFileSelect={loadBackground}
-            onBgImageRemove={removeBackground}
-            onEditBgCrop={() => setCropTarget('background')}
             onPlacementChange={movePlacement}
-            bgUploadError={bgUploadError}
-            bgLoading={bgLoading}
-            busy={downloading}
-            onBgFitChange={(v) => update('bgFit', v)}
-            onBgColorChange={(v) => update('bgColor', v)}
           />
         </div>
 
-        {/* Right controls panel — canvas size, parameters, options */}
-        <div className={`panel-right${mobilePanel !== 'parameters' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderLeft: `1px solid ${t.border}` }}>
+        <div id="detail-settings" role="tabpanel" aria-label={`${activeTab} settings`} className={`panel-right${activeTab === 'source' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
+          <div className="settings-content">
 
-          {/* Panel header */}
-          <div style={{ flexShrink: 0, padding: '8px 14px', background: t.bgRaised, borderBottom: `1px solid ${t.border}` }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: t.text, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Parameters
-            </span>
-          </div>
-
-          {/* Scrollable content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-            {/* Canvas size */}
+            {activeTab === 'canvas' && <>
+            <div className="segmented-row" role="group" aria-label="Canvas controls">
+              <button type="button" aria-pressed={canvasView === 'size'} onClick={() => setCanvasView('size')}>Size & export</button>
+              <button type="button" aria-pressed={canvasView === 'background'} onClick={() => setCanvasView('background')}>Background</button>
+            </div>
+            {canvasView === 'size' && <div className="settings-section">
             <div>
               <SectionLabel>Canvas Size (px)</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1244,18 +1074,58 @@ export default function App() {
               </div>
               {exportTooLarge && <div role="alert" style={{ marginTop: 7, color: '#ff6b6b', fontSize: 11 }}>Reduce canvas size below 32 million pixels to export.</div>}
             </div>
+            <CheckboxRow id="transparent" label="Transparent PNG" checked={config.transparentBg} onChange={(v) => update('transparentBg', v)} />
+            {config.transparentBg && <div className="settings-note">Only watermark pixels are exported. The checkerboard marks the canvas bounds.</div>}
+            </div>}
 
-            {/* Sliders */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {canvasView === 'background' && <div className="settings-section">
+              <SectionLabel>Background</SectionLabel>
+              {config.transparentBg && <div className="settings-note">This background is hidden while Transparent PNG is selected.</div>}
+              {!config.transparentBg && <div className="color-row">
+                <input type="color" aria-label="Background color" value={config.bgColor} onChange={(e) => update('bgColor', e.target.value)} />
+                {['#ffffff', '#000000', '#f5f5f5', '#1a1a1a', '#e8f4f8', '#fff8e1'].map((color) => (
+                  <button key={color} type="button" className="color-swatch" title={color} aria-label={`Background color ${color}`}
+                    aria-pressed={config.bgColor === color} onClick={() => update('bgColor', color)} style={{ background: color }} />
+                ))}
+              </div>}
+              <label className="file-upload background-upload">
+                {bgImage ? 'Replace background image' : 'Upload background image'}
+                <input type="file" accept="image/*" className="file-input" aria-label="Upload background image" disabled={downloading}
+                  onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void loadBackground(file) }} />
+              </label>
+              {bgLoading && <span role="status" className="settings-note">Loading image…</span>}
+              {bgUploadError && <span role="alert" className="settings-error">{bgUploadError}</span>}
+              {bgImage && <>
+                <div className="image-actions">
+                  <span>Image ready</span>
+                  <button type="button" className="utility-button" disabled={bgLoading || downloading} onClick={() => setCropTarget('background')}>Crop</button>
+                  <button type="button" className="utility-button" disabled={downloading} onClick={removeBackground}>Remove</button>
+                </div>
+                <FitToggle label="Background fit" value={config.bgFit} options={[
+                  { label: 'Cover', value: 'cover' }, { label: 'Contain', value: 'contain' },
+                  { label: 'Fill', value: 'fill' }, { label: 'None', value: 'none' },
+                ]} onChange={(fit) => update('bgFit', fit)} />
+              </>}
+            </div>}
+            </>}
+
+            {activeTab === 'layout' && <>
+            <div>
+              <SectionLabel>Placement mode</SectionLabel>
+              <div className="segmented-row" role="group" aria-label="Placement mode">
+                {(['tiled', 'single'] as const).map((mode) => (
+                  <button key={mode} type="button" aria-pressed={config.mode === mode} onClick={() => update('mode', mode)}>
+                    {mode === 'tiled' ? 'Repeat' : 'Single'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="settings-section">
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                paddingBottom: 8,
-                borderBottom: `1px solid ${t.border}`,
-                marginBottom: 2,
+                gap: 8,
               }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: 'uppercase' as const, letterSpacing: '0.12em' }}>
-                  {config.mode === 'tiled' ? 'Tile Parameters' : 'Stamp Parameters'}
-                </span>
+                <SectionLabel>{config.mode === 'tiled' ? 'Pattern layout' : 'Stamp position'}</SectionLabel>
                 <button
                   onClick={() => setConfig((prev) => ({
                     ...prev,
@@ -1290,49 +1160,50 @@ export default function App() {
               </div>
               <RangeInput label="Size"      value={config.fontSize}                  min={8}    max={1000} unit="px" onChange={(v) => update('fontSize', v)} />
               {config.mode === 'tiled' && <>
-                <RangeInput label="Spacing X" value={config.spacingX} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingX: v, tileOffsetX: Math.min(prev.tileOffsetX, v) }))} />
-                <RangeInput label="Spacing Y" value={config.spacingY} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingY: v, tileOffsetY: Math.min(prev.tileOffsetY, v * (prev.stagger ? 2 : 1)) }))} />
-                <RangeInput label="Tile origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} />
-                <RangeInput label="Tile origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} />
+                <div className="control-grid">
+                  <RangeInput label="Spacing X" value={config.spacingX} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingX: v, tileOffsetX: Math.min(prev.tileOffsetX, v) }))} />
+                  <RangeInput label="Spacing Y" value={config.spacingY} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingY: v, tileOffsetY: Math.min(prev.tileOffsetY, v * (prev.stagger ? 2 : 1)) }))} />
+                  <RangeInput label="Origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} />
+                  <RangeInput label="Origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} />
+                </div>
               </>}
               {config.mode === 'single' && <>
-                <RangeInput label="Position X" value={config.posX} min={0} max={100} unit="%" onChange={(v) => update('posX', v)} />
-                <RangeInput label="Position Y" value={config.posY} min={0} max={100} unit="%" onChange={(v) => update('posY', v)} />
+                <div className="control-grid">
+                  <RangeInput label="Position X" value={config.posX} min={0} max={100} unit="%" onChange={(v) => update('posX', v)} />
+                  <RangeInput label="Position Y" value={config.posY} min={0} max={100} unit="%" onChange={(v) => update('posY', v)} />
+                </div>
               </>}
-              <RangeInput label="Opacity"   value={Math.round(config.opacity * 100)} min={0}    max={100} unit="%" onChange={(v) => update('opacity', v / 100)} />
-              <RangeInput label="Rotation"  value={config.rotation}                  min={-180} max={180} unit="°" onChange={(v) => update('rotation', v)} />
-              <div style={{ fontSize: 11, color: t.textMuted }}>Tip: drag the preview to move the watermark.</div>
+              {config.mode === 'tiled' && <CheckboxRow id="stagger" label="Stagger rows" checked={config.stagger} onChange={(v) => setConfig((prev) => ({ ...prev, stagger: v, tileOffsetY: Math.min(prev.tileOffsetY, prev.spacingY * (v ? 2 : 1)) }))} />}
+              <div className="settings-note">Drag the preview to move the {config.mode === 'tiled' ? 'entire pattern' : 'stamp'}.</div>
             </div>
+            </>}
 
-            {/* Options */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <SectionLabel>Options</SectionLabel>
-              {config.mode === 'tiled' && (
-                <CheckboxRow id="stagger" label="Stagger rows (brick)" checked={config.stagger} onChange={(v) => setConfig((prev) => ({ ...prev, stagger: v, tileOffsetY: Math.min(prev.tileOffsetY, prev.spacingY * (v ? 2 : 1)) }))} />
-              )}
-              <CheckboxRow id="mirrorH"      label="Mirror horizontal"      checked={config.mirrorH}      onChange={(v) => update('mirrorH', v)} />
-              <CheckboxRow id="mirrorV"      label="Mirror vertical"        checked={config.mirrorV}      onChange={(v) => update('mirrorV', v)} />
-              <CheckboxRow id="transparent" label="Transparent PNG background" checked={config.transparentBg} onChange={(v) => update('transparentBg', v)} />
-              {config.transparentBg && <div style={{ color: t.textMuted, fontSize: 11 }}>The checkerboard stays inside the outlined canvas. Only the watermark pixels appear in the PNG.</div>}
-            </div>
+            {activeTab === 'style' && <>
+              <div className="settings-section">
+                <SectionLabel>Watermark appearance</SectionLabel>
+                <RangeInput label="Opacity" value={Math.round(config.opacity * 100)} min={0} max={100} unit="%" onChange={(v) => update('opacity', v / 100)} />
+                <RangeInput label="Rotation" value={config.rotation} min={-180} max={180} unit="°" onChange={(v) => update('rotation', v)} />
+              </div>
+              <div className="settings-section">
+                <SectionLabel>Flip</SectionLabel>
+                <div className="control-grid">
+                  <CheckboxRow id="mirrorH" label="Horizontal" checked={config.mirrorH} onChange={(v) => update('mirrorH', v)} />
+                  <CheckboxRow id="mirrorV" label="Vertical" checked={config.mirrorV} onChange={(v) => update('mirrorV', v)} />
+                </div>
+              </div>
+              <div className="settings-note">These changes apply to the watermark. Canvas transparency and background are under Canvas.</div>
+            </>}
 
           </div>
 
-          {/* Export button — hidden on mobile */}
-          <div className="desktop-export" style={{ flexShrink: 0, padding: '10px 12px', borderTop: `1px solid ${t.border}`, background: t.bgSurface }}>
-            {exportError && <div role="alert" style={{ color: '#ff6b6b', fontSize: 11, marginBottom: 6 }}>{exportError}</div>}
-            <GreenButton onClick={download} fullWidth disabled={downloading || wmLoading || bgLoading || exportTooLarge}>
-              {downloading ? 'Exporting...' : wmLoading || bgLoading ? 'Loading image…' : exportTooLarge ? 'Canvas too large' : 'Export PNG'}
-            </GreenButton>
-          </div>
         </div>
 
       </div>
 
-      {/* Export button pinned at bottom on mobile */}
-      <div className="mobile-export">
+      <div className="export-bar">
         {exportError && <div role="alert" style={{ color: '#ff6b6b', fontSize: 11, marginBottom: 6 }}>{exportError}</div>}
-        <GreenButton onClick={download} fullWidth disabled={downloading || wmLoading || bgLoading || exportTooLarge}>
+        <span className="export-summary">PNG · {config.canvasWidth} × {config.canvasHeight}px · {config.transparentBg ? 'Transparent' : 'Background'}</span>
+        <GreenButton onClick={download} disabled={downloading || wmLoading || bgLoading || exportTooLarge}>
           {downloading ? 'Exporting...' : wmLoading || bgLoading ? 'Loading image…' : exportTooLarge ? 'Canvas too large' : 'Export PNG'}
         </GreenButton>
       </div>
