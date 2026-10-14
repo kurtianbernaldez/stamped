@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useId } from 'react'
 import './index.css'
 import { t } from './theme'
+import { CropEditor } from './CropEditor'
+import { getImageUploadErrorMessage, loadImageFile, releaseImageFile } from './imageUpload'
+import { FULL_CROP, renderWatermark } from './render'
+import type { CropRect, ObjectFit, WatermarkConfig } from './render'
 
 // Named hex constants for text color swatches.
 // Must stay as real hex values (used in canvas fillStyle and as color picker seeds).
@@ -135,78 +139,6 @@ const FONT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Chalkduster',            value: 'Chalkduster, fantasy' },
 ]
 
-type WatermarkType = 'text' | 'image'
-type WatermarkMode = 'tiled' | 'single'
-type ObjectFit = 'fill' | 'contain' | 'cover' | 'none'
-
-// Draws `img` into a `dw × dh` rect at `(dx, dy)` on `ctx` using CSS-style object-fit semantics.
-function drawImageFitted(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  dx: number, dy: number, dw: number, dh: number,
-  fit: ObjectFit,
-) {
-  const iw = img.naturalWidth  || img.width
-  const ih = img.naturalHeight || img.height
-  if (fit === 'fill') {
-    ctx.drawImage(img, dx, dy, dw, dh)
-    return
-  }
-  if (fit === 'none') {
-    // Draw at natural size, centred
-    const ox = dx + (dw - iw) / 2
-    const oy = dy + (dh - ih) / 2
-    ctx.save()
-    ctx.beginPath()
-    ctx.rect(dx, dy, dw, dh)
-    ctx.clip()
-    ctx.drawImage(img, ox, oy, iw, ih)
-    ctx.restore()
-    return
-  }
-  const imgRatio = iw / ih
-  const destRatio = dw / dh
-  let sw = dw, sh = dh
-  if (fit === 'contain') {
-    if (imgRatio > destRatio) { sh = dw / imgRatio } else { sw = dh * imgRatio }
-  } else { // cover
-    if (imgRatio > destRatio) { sw = dh * imgRatio } else { sh = dw / imgRatio }
-  }
-  const ox = dx + (dw - sw) / 2
-  const oy = dy + (dh - sh) / 2
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(dx, dy, dw, dh)
-  ctx.clip()
-  ctx.drawImage(img, ox, oy, sw, sh)
-  ctx.restore()
-}
-
-interface WatermarkConfig {
-  type: WatermarkType
-  mode: WatermarkMode
-  text: string
-  textColor: string
-  fontFamily: string
-  fontSize: number
-  spacingX: number
-  spacingY: number
-  posX: number
-  posY: number
-  opacity: number
-  rotation: number
-  canvasWidth: number
-  canvasHeight: number
-  transparentBg: boolean
-  bgColor: string
-  stagger: boolean
-  mirrorH: boolean
-  mirrorV: boolean
-  wmFit: ObjectFit
-  bgFit: ObjectFit
-  uploadedImage: string | null
-}
-
 const DEFAULT_CONFIG: WatermarkConfig = {
   type: 'text',
   mode: 'tiled',
@@ -218,6 +150,8 @@ const DEFAULT_CONFIG: WatermarkConfig = {
   spacingY: 120,
   posX: 50,
   posY: 50,
+  tileOffsetX: 60,
+  tileOffsetY: 60,
   opacity: 0.3,
   rotation: -30,
   canvasWidth: 800,
@@ -229,62 +163,8 @@ const DEFAULT_CONFIG: WatermarkConfig = {
   mirrorV: false,
   wmFit: 'contain',
   bgFit: 'cover',
-  uploadedImage: null,
-}
-
-function drawWatermark(
-  ctx: CanvasRenderingContext2D,
-  config: WatermarkConfig,
-  watermarkImage: HTMLImageElement | null,
-) {
-  const { canvasWidth, canvasHeight, spacingX, spacingY, rotation, fontSize, type, text, textColor, fontFamily, stagger, mode, posX, posY, mirrorH, mirrorV, wmFit } = config
-
-  ctx.globalAlpha = config.opacity
-
-  // Apply global mirror transforms around canvas centre
-  if (mirrorH || mirrorV) {
-    ctx.save()
-    ctx.translate(mirrorH ? canvasWidth : 0, mirrorV ? canvasHeight : 0)
-    ctx.scale(mirrorH ? -1 : 1, mirrorV ? -1 : 1)
-  }
-
-  const drawStamp = (x: number, y: number) => {
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate((rotation * Math.PI) / 180)
-    if (type === 'text' && text) {
-      ctx.font = `700 ${fontSize}px ${fontFamily}`
-      ctx.fillStyle = textColor
-      ctx.textBaseline = 'middle'
-      ctx.textAlign = 'center'
-      ctx.fillText(text, 0, 0)
-    } else if (type === 'image' && watermarkImage) {
-      const imgSize = fontSize * 2
-      drawImageFitted(ctx, watermarkImage, -imgSize / 2, -imgSize / 2, imgSize, imgSize, wmFit)
-    }
-    ctx.restore()
-  }
-
-  if (mode === 'single') {
-    const x = (posX / 100) * canvasWidth
-    const y = (posY / 100) * canvasHeight
-    drawStamp(x, y)
-  } else {
-    const cols = Math.ceil(canvasWidth / spacingX) + 2
-    const rows = Math.ceil(canvasHeight / spacingY) + 2
-    for (let row = -1; row < rows; row++) {
-      const offsetX = stagger && row % 2 !== 0 ? spacingX / 2 : 0
-      for (let col = -1; col < cols; col++) {
-        drawStamp(col * spacingX + offsetX, row * spacingY)
-      }
-    }
-  }
-
-  if (mirrorH || mirrorV) {
-    ctx.restore()
-  }
-
-  ctx.globalAlpha = 1
+  wmCrop: FULL_CROP,
+  bgCrop: FULL_CROP,
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -317,18 +197,19 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function NvidiaInput({ value, onChange, placeholder, type = 'text' }: {
+function NvidiaInput({ value, onChange, placeholder, ariaLabel }: {
   value: string | number
   onChange: (v: string) => void
   placeholder?: string
-  type?: string
+  ariaLabel: string
 }) {
   return (
     <input
-      type={type}
+      type="text"
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       style={{
         background: t.bgSurface,
         border: `1px solid ${t.border}`,
@@ -348,6 +229,42 @@ function NvidiaInput({ value, onChange, placeholder, type = 'text' }: {
   )
 }
 
+function DimensionInput({ label, value, onChange }: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+}) {
+  const [draft, setDraft] = useState({ source: value, text: String(value) })
+  const raw = draft.source === value ? draft.text : String(value)
+  const commit = () => {
+    const parsed = Number(raw)
+    if (!raw.trim() || !Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+      setDraft({ source: value, text: String(value) })
+      return
+    }
+    const next = Math.min(8000, Math.max(1, parsed))
+    setDraft({ source: next, text: String(next) })
+    onChange(next)
+  }
+  return (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <input
+        type="number"
+        min={1}
+        max={8000}
+        step={1}
+        value={raw}
+        aria-label={`Canvas ${label.toLowerCase()} in pixels`}
+        onChange={(event) => setDraft({ source: value, text: event.target.value })}
+        onBlur={commit}
+        onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+        style={{ width: '100%', background: t.bgSurface, border: `1px solid ${t.border}`, borderRadius: t.radius, padding: '9px 11px', color: t.text, fontSize: 14, fontFamily: 'Arial, Helvetica, sans-serif' }}
+      />
+    </div>
+  )
+}
+
 function RangeInput({ label, value, min, max, unit = '', onChange }: {
   label: string
   value: number
@@ -358,13 +275,14 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
 }) {
   // Local string state lets the user type freely without being blocked mid-input
   const [raw, setRaw] = useState(String(value))
+  const inputId = useId()
 
   // Keep raw in sync when the value changes from the slider or external reset
   useEffect(() => { setRaw(String(value)) }, [value])
 
   const commit = (str: string) => {
     const parsed = Number(str)
-    if (isNaN(parsed)) { setRaw(String(value)); return }
+    if (!str.trim() || !Number.isFinite(parsed)) { setRaw(String(value)); return }
     const clamped = Math.min(max, Math.max(min, parsed))
     onChange(clamped)
     setRaw(String(clamped))
@@ -373,13 +291,14 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.05em', flexShrink: 0 }}>
+        <label htmlFor={inputId} style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.05em', flexShrink: 0 }}>
           {label}
-        </span>
+        </label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
           <input
             type="number"
             value={raw}
+            aria-label={`${label} value in ${unit || 'pixels'}`}
             min={min}
             max={max}
             onChange={(e) => setRaw(e.target.value)}
@@ -418,7 +337,7 @@ function RangeInput({ label, value, min, max, unit = '', onChange }: {
           </span>
         </div>
       </div>
-      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input id={inputId} type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </div>
   )
 }
@@ -512,10 +431,15 @@ function FontSearch({ value, onChange }: { value: string; onChange: (v: string) 
   }
 
   return (
-    <div ref={containerRef} style={{ position: 'relative' }}>
+    <div ref={containerRef} style={{ position: 'relative' }} onKeyDown={(event) => {
+      if (event.key === 'Escape' && open) { setOpen(false); setQuery('') }
+    }}>
       {/* Trigger */}
       <button
         onClick={() => open ? setOpen(false) : handleOpen()}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Font: ${selectedLabel}`}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: t.bgSurface, border: `1px solid ${open ? t.accent : t.border}`,
@@ -546,6 +470,7 @@ function FontSearch({ value, onChange }: { value: string; onChange: (v: string) 
             <input
               ref={inputRef}
               value={query}
+               aria-label="Search fonts"
               onChange={e => setQuery(e.target.value)}
               placeholder="Search fonts..."
               style={{
@@ -559,12 +484,14 @@ function FontSearch({ value, onChange }: { value: string; onChange: (v: string) 
             />
           </div>
           {/* Options list */}
-          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+           <div role="listbox" aria-label="Fonts" style={{ maxHeight: 200, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
               <div style={{ padding: '10px 12px', color: t.textMuted, fontSize: 12 }}>No fonts found</div>
             ) : filtered.map(f => (
               <button
                 key={f.value}
+                 role="option"
+                 aria-selected={f.value === value}
                 onClick={() => { onChange(f.value); setOpen(false); setQuery('') }}
                 style={{
                   width: '100%', display: 'block', textAlign: 'left',
@@ -587,13 +514,14 @@ function FontSearch({ value, onChange }: { value: string; onChange: (v: string) 
 }
 
 // Compact segmented button group for selecting an ObjectFit value
-function FitToggle({ value, options, onChange }: {
+function FitToggle({ label, value, options, onChange }: {
+  label: string
   value: ObjectFit
   options: { label: string; value: ObjectFit }[]
   onChange: (v: ObjectFit) => void
 }) {
   return (
-    <div style={{ display: 'flex' }}>
+    <div role="group" aria-label={label} style={{ display: 'flex' }}>
       {options.map((opt, i) => {
         const active = value === opt.value
         const isFirst = i === 0
@@ -602,6 +530,8 @@ function FitToggle({ value, options, onChange }: {
           <button
             key={opt.value}
             onClick={() => onChange(opt.value)}
+            aria-pressed={active}
+            aria-label={`${label}: ${opt.label}`}
             style={{
               flex: 1,
               padding: '3px 7px',
@@ -631,27 +561,29 @@ function FitToggle({ value, options, onChange }: {
   )
 }
 
-function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBgUploadError, onBgFitChange, onBgColorChange }: {
+function WatermarkCanvas({ config, bgImage, watermarkImage, onBgFileSelect, onBgImageRemove, onEditBgCrop, onPlacementChange, bgUploadError, bgLoading, busy, onBgFitChange, onBgColorChange }: {
   config: WatermarkConfig
   bgImage: HTMLImageElement | null
-  onBgImageChange: (img: HTMLImageElement | null) => void
+  watermarkImage: HTMLImageElement | null
+  onBgFileSelect: (file: File) => Promise<void>
+  onBgImageRemove: () => void
+  onEditBgCrop: () => void
+  onPlacementChange: (start: WatermarkConfig, dx: number, dy: number) => void
   bgUploadError: string | null
-  onBgUploadError: (msg: string | null) => void
+  bgLoading: boolean
+  busy: boolean
   onBgFitChange: (fit: ObjectFit) => void
   onBgColorChange: (color: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [watermarkImage, setWatermarkImage] = useState<HTMLImageElement | null>(null)
+  const dragRef = useRef<{ pointerId: number; x: number; y: number; config: WatermarkConfig } | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const pendingDragRef = useRef<{ config: WatermarkConfig; dx: number; dy: number } | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (config.uploadedImage) {
-      const img = new Image()
-      img.onload = () => setWatermarkImage(img)
-      img.src = config.uploadedImage
-    } else {
-      setWatermarkImage(null) // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [config.uploadedImage])
+  useEffect(() => () => {
+    if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+  }, [])
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
@@ -659,22 +591,26 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    canvas.width = config.canvasWidth
-    canvas.height = config.canvasHeight
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    if (!config.transparentBg) {
-      if (bgImage) {
-        drawImageFitted(ctx, bgImage, 0, 0, canvas.width, canvas.height, config.bgFit)
-      } else {
-        ctx.fillStyle = config.bgColor
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-      }
+    const scale = Math.min(1, 1800 / Math.max(config.canvasWidth, config.canvasHeight), Math.sqrt(2_000_000 / (config.canvasWidth * config.canvasHeight)))
+    const previewWidth = Math.max(1, Math.round(config.canvasWidth * scale))
+    const previewHeight = Math.max(1, Math.round(config.canvasHeight * scale))
+    if (canvas.width !== previewWidth) canvas.width = previewWidth
+    if (canvas.height !== previewHeight) canvas.height = previewHeight
+    ctx.setTransform(canvas.width / config.canvasWidth, 0, 0, canvas.height / config.canvasHeight, 0, 0)
+    try {
+      renderWatermark(ctx, config, bgImage, watermarkImage)
+      setPreviewError(null)
+    } catch (error) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      setPreviewError(error instanceof Error ? error.message : 'Could not draw the preview.')
     }
+  }, [config, bgImage, watermarkImage])
 
-    drawWatermark(ctx, config, watermarkImage)  }, [config, bgImage, watermarkImage])
-
-  useEffect(() => { render() }, [render])
+  useEffect(() => {
+    const frame = requestAnimationFrame(render)
+    return () => cancelAnimationFrame(frame)
+  }, [render])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -697,16 +633,66 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
 
       {/* Canvas */}
       <div
-        className={config.transparentBg ? 'canvas-checkerboard' : ''}
         style={{
           flex: 1,
-          background: config.transparentBg ? undefined : t.bg,
+          background: t.bgRaised,
           display: 'flex', justifyContent: 'center', alignItems: 'center',
-          overflow: 'auto',
+          overflow: 'hidden',
           padding: 16,
+          minHeight: 0,
+          position: 'relative',
         }}
       >
-        <canvas ref={canvasRef} style={{ maxWidth: '100%', maxHeight: '100%', boxShadow: t.shadow, display: 'block' }} />
+        <canvas
+          ref={canvasRef}
+          className={config.transparentBg ? 'canvas-checkerboard' : ''}
+          aria-label="Watermark preview. Drag to move the watermark."
+          onPointerDown={(event) => {
+            if (event.button !== 0 && event.pointerType !== 'touch') return
+            if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+            dragFrameRef.current = null
+            pendingDragRef.current = null
+            dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, config }
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerMove={(event) => {
+            const start = dragRef.current
+            if (!start || start.pointerId !== event.pointerId) return
+            const bounds = event.currentTarget.getBoundingClientRect()
+            pendingDragRef.current = {
+              config: start.config,
+              dx: (event.clientX - start.x) * start.config.canvasWidth / bounds.width,
+              dy: (event.clientY - start.y) * start.config.canvasHeight / bounds.height,
+            }
+            if (dragFrameRef.current === null) {
+              dragFrameRef.current = requestAnimationFrame(() => {
+                dragFrameRef.current = null
+                const pending = pendingDragRef.current
+                pendingDragRef.current = null
+                if (pending) onPlacementChange(pending.config, pending.dx, pending.dy)
+              })
+            }
+          }}
+          onPointerUp={(event) => {
+            const start = dragRef.current
+            if (!start || start.pointerId !== event.pointerId) return
+            if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+            dragFrameRef.current = null
+            pendingDragRef.current = null
+            const bounds = event.currentTarget.getBoundingClientRect()
+            onPlacementChange(start.config, (event.clientX - start.x) * start.config.canvasWidth / bounds.width, (event.clientY - start.y) * start.config.canvasHeight / bounds.height)
+            dragRef.current = null
+          }}
+          onPointerCancel={(event) => {
+            if (dragRef.current?.pointerId !== event.pointerId) return
+            if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+            dragFrameRef.current = null
+            pendingDragRef.current = null
+            dragRef.current = null
+          }}
+          style={{ maxWidth: '100%', maxHeight: '100%', boxShadow: t.shadow, display: 'block', border: `1px solid ${t.borderStrong}`, cursor: 'grab', touchAction: 'none' }}
+        />
+        {previewError && <div role="alert" style={{ position: 'absolute', left: 24, right: 24, bottom: 24, padding: 10, borderRadius: t.radius, background: t.bgSurface, color: '#ff6b6b', fontSize: 12, textAlign: 'center' }}>{previewError}</div>}
       </div>
 
       {/* Bottom bar: background upload + spec strip */}
@@ -724,11 +710,11 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
           </span>
           {!config.transparentBg && (
             <>
-              <input type="color" value={config.bgColor} onChange={(e) => onBgColorChange(e.target.value)}
+              <input type="color" aria-label="Background color" value={config.bgColor} onChange={(e) => onBgColorChange(e.target.value)}
                 style={{ width: 28, height: 24, padding: 0, border: `1px solid ${t.border}`, borderRadius: t.radius, cursor: 'pointer', flexShrink: 0 }} />
               <div style={{ display: 'flex', gap: 3 }}>
                 {['#ffffff', '#000000', '#f5f5f5', '#1a1a1a', '#e8f4f8', '#fff8e1', '#fce4ec', '#e8f5e9'].map((c) => (
-                  <button key={c} title={c} onClick={() => onBgColorChange(c)} style={{
+                   <button key={c} title={c} aria-label={`Background color ${c}`} onClick={() => onBgColorChange(c)} style={{
                     width: 16, height: 16, background: c, padding: 0, flexShrink: 0,
                     border: config.bgColor === c ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
                     borderRadius: 0, cursor: 'pointer',
@@ -737,7 +723,7 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
               </div>
             </>
           )}
-          <label
+          <label className="file-upload"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               cursor: 'pointer', padding: '4px 10px',
@@ -750,31 +736,21 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
             Upload
-            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              onBgUploadError(null)
-              if (file.size > 20 * 1024 * 1024) {
-                onBgUploadError('File exceeds 20 MB limit.')
+              <input type="file" accept="image/*" className="file-input" aria-label="Upload background image" disabled={busy} onChange={(e) => {
+                const file = e.target.files?.[0]
                 e.target.value = ''
-                return
-              }
-              const reader = new FileReader()
-              reader.onload = (ev) => {
-                const img = new Image()
-                img.onload = () => onBgImageChange(img)
-                img.src = ev.target?.result as string
-              }
-              reader.readAsDataURL(file)
+                if (file) void onBgFileSelect(file)
             }} />
           </label>
+          {bgLoading && <span role="status" style={{ fontSize: 11, color: t.textMuted }}>Loading image…</span>}
           {bgUploadError && (
             <span style={{ fontSize: 11, color: '#ff6b6b', fontWeight: 700 }}>{bgUploadError}</span>
           )}
-          {bgImage && !bgUploadError && (
+          {bgImage && (
             <>
               <span style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>&#10003; Loaded</span>
-              <button onClick={() => onBgImageChange(null)} style={{ fontSize: 11, color: t.textDisabled, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: 0 }}>
+              <button onClick={onEditBgCrop} className="utility-button" disabled={bgLoading || busy}>Crop</button>
+              <button onClick={onBgImageRemove} disabled={busy} style={{ fontSize: 11, color: t.textDisabled, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, padding: 0 }}>
                 Remove
               </button>
             </>
@@ -782,6 +758,7 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
           {bgImage && (
             <div style={{ marginLeft: 'auto' }}>
               <FitToggle
+                 label="Background fit"
                 value={config.bgFit}
                 options={[
                   { label: 'Cover',   value: 'cover'   },
@@ -793,10 +770,11 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
               />
             </div>
           )}
+          {config.transparentBg && <span style={{ fontSize: 11, color: t.textMuted }}>Hidden in transparent PNG</span>}
         </div>
 
         {/* Spec strip */}
-        <div style={{
+         <div className="preview-specs" style={{
           display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
         }}>
           {[
@@ -804,7 +782,7 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
             { label: 'Size',     value: `${config.fontSize}px` },
             { label: 'Opacity',  value: `${Math.round(config.opacity * 100)}%` },
             { label: 'Rotation', value: `${config.rotation}°` },
-            { label: 'Pattern',  value: config.mode === 'single' ? `${config.posX}%,${config.posY}%` : config.stagger ? 'Staggered' : 'Grid' },
+            { label: 'Position', value: config.mode === 'single' ? `${Math.round(config.posX)}%, ${Math.round(config.posY)}%` : `${Math.round(config.tileOffsetX)}px, ${Math.round(config.tileOffsetY)}px` },
           ].map((item, i) => (
             <div key={item.label} style={{
               padding: '7px 12px',
@@ -828,52 +806,188 @@ function WatermarkCanvas({ config, bgImage, onBgImageChange, bgUploadError, onBg
 export default function App() {
   const [config, setConfig] = useState<WatermarkConfig>(DEFAULT_CONFIG)
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null)
+  const [watermarkImage, setWatermarkImage] = useState<HTMLImageElement | null>(null)
+  const [cropTarget, setCropTarget] = useState<'background' | 'watermark' | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [wmUploadError, setWmUploadError] = useState<string | null>(null)
   const [bgUploadError, setBgUploadError] = useState<string | null>(null)
+  const [wmLoading, setWmLoading] = useState(false)
+  const [bgLoading, setBgLoading] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const watermarkLoadId = useRef(0)
+  const backgroundLoadId = useRef(0)
+  const watermarkAbortRef = useRef<AbortController | null>(null)
+  const backgroundAbortRef = useRef<AbortController | null>(null)
+  const watermarkImageRef = useRef<HTMLImageElement | null>(null)
+  const backgroundImageRef = useRef<HTMLImageElement | null>(null)
+  const exportInProgress = useRef(false)
+
+  useEffect(() => () => {
+    watermarkLoadId.current++
+    backgroundLoadId.current++
+    watermarkAbortRef.current?.abort()
+    backgroundAbortRef.current?.abort()
+    if (watermarkImageRef.current) releaseImageFile(watermarkImageRef.current)
+    if (backgroundImageRef.current) releaseImageFile(backgroundImageRef.current)
+  }, [])
 
   const update = <K extends keyof WatermarkConfig>(key: K, value: WatermarkConfig[K]) => {
     setConfig((prev) => ({ ...prev, [key]: value }))
   }
 
-  const download = async () => {
-    if (downloading) return
-    setDownloading(true)
+  const loadWatermark = async (file: File) => {
+    if (exportInProgress.current) return
+    const requestId = ++watermarkLoadId.current
+    watermarkAbortRef.current?.abort()
+    const controller = new AbortController()
+    watermarkAbortRef.current = controller
+    setCropTarget(null)
+    setWmUploadError(null)
+    setWmLoading(true)
     try {
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      const image = await loadImageFile(file, controller.signal)
+      if (requestId !== watermarkLoadId.current) {
+        releaseImageFile(image)
+        return
+      }
+      setCropTarget(null)
+      if (watermarkImageRef.current) releaseImageFile(watermarkImageRef.current)
+      watermarkImageRef.current = image
+      setWatermarkImage(image)
+      update('wmCrop', { ...FULL_CROP })
+    } catch (error) {
+      if (requestId === watermarkLoadId.current) setWmUploadError(getImageUploadErrorMessage(error))
+    } finally {
+      if (requestId === watermarkLoadId.current) {
+        watermarkAbortRef.current = null
+        setWmLoading(false)
+      }
+    }
+  }
 
-      canvas.width = config.canvasWidth
-      canvas.height = config.canvasHeight
+  const loadBackground = async (file: File) => {
+    if (exportInProgress.current) return
+    const requestId = ++backgroundLoadId.current
+    backgroundAbortRef.current?.abort()
+    const controller = new AbortController()
+    backgroundAbortRef.current = controller
+    setCropTarget(null)
+    setBgUploadError(null)
+    setBgLoading(true)
+    try {
+      const image = await loadImageFile(file, controller.signal)
+      if (requestId !== backgroundLoadId.current) {
+        releaseImageFile(image)
+        return
+      }
+      setCropTarget(null)
+      if (backgroundImageRef.current) releaseImageFile(backgroundImageRef.current)
+      backgroundImageRef.current = image
+      setBgImage(image)
+      update('bgCrop', { ...FULL_CROP })
+    } catch (error) {
+      if (requestId === backgroundLoadId.current) setBgUploadError(getImageUploadErrorMessage(error))
+    } finally {
+      if (requestId === backgroundLoadId.current) {
+        backgroundAbortRef.current = null
+        setBgLoading(false)
+      }
+    }
+  }
 
-      if (!config.transparentBg) {
-        if (bgImage) {
-          drawImageFitted(ctx, bgImage, 0, 0, canvas.width, canvas.height, config.bgFit)
-        } else {
-          ctx.fillStyle = config.bgColor
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
+  const removeWatermark = () => {
+    if (exportInProgress.current) return
+    watermarkLoadId.current++
+    watermarkAbortRef.current?.abort()
+    watermarkAbortRef.current = null
+    if (watermarkImageRef.current) releaseImageFile(watermarkImageRef.current)
+    watermarkImageRef.current = null
+    setWmLoading(false)
+    setCropTarget((target) => target === 'watermark' ? null : target)
+    setWatermarkImage(null)
+    update('wmCrop', { ...FULL_CROP })
+    setWmUploadError(null)
+  }
+
+  const removeBackground = () => {
+    if (exportInProgress.current) return
+    backgroundLoadId.current++
+    backgroundAbortRef.current?.abort()
+    backgroundAbortRef.current = null
+    if (backgroundImageRef.current) releaseImageFile(backgroundImageRef.current)
+    backgroundImageRef.current = null
+    setBgLoading(false)
+    setCropTarget((target) => target === 'background' ? null : target)
+    setBgImage(null)
+    update('bgCrop', { ...FULL_CROP })
+    setBgUploadError(null)
+  }
+
+  const movePlacement = (start: WatermarkConfig, dx: number, dy: number) => {
+    setConfig((previous) => {
+      if (start.mode === 'single') {
+        return {
+          ...previous,
+          posX: Math.min(100, Math.max(0, start.posX + (start.mirrorH ? -dx : dx) / start.canvasWidth * 100)),
+          posY: Math.min(100, Math.max(0, start.posY + (start.mirrorV ? -dy : dy) / start.canvasHeight * 100)),
         }
       }
-
-      let watermarkImage: HTMLImageElement | null = null
-      if (config.type === 'image' && config.uploadedImage) {
-        const img = new Image()
-        await new Promise<void>((res) => { img.onload = () => res(); img.src = config.uploadedImage! })
-        watermarkImage = img
+      const phase = (value: number, span: number) => ((value % span) + span) % span
+      return {
+        ...previous,
+        tileOffsetX: phase(Math.round(start.tileOffsetX + (start.mirrorH ? -dx : dx)), start.spacingX),
+        tileOffsetY: phase(Math.round(start.tileOffsetY + (start.mirrorV ? -dy : dy)), start.spacingY * (start.stagger ? 2 : 1)),
       }
+    })
+  }
 
-      drawWatermark(ctx, config, watermarkImage)
-      const link = document.createElement('a')
-      link.download = `watermark-${Date.now()}.png`
-      link.href = canvas.toDataURL('image/png')
-      link.click()
+  const download = async () => {
+    if (exportInProgress.current || wmLoading || bgLoading) return
+    exportInProgress.current = true
+    setExportError(null)
+    setDownloading(true)
+    try {
+      if (config.canvasWidth * config.canvasHeight > 32_000_000) {
+        throw new Error('Canvas is too large to export. Keep width × height under 32 million pixels.')
+      }
+      if (config.type === 'image' && !watermarkImage) {
+        throw new Error('Upload a watermark image before exporting.')
+      }
+      if (config.type === 'text' && !config.text.trim()) {
+        throw new Error('Enter watermark text before exporting.')
+      }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      const canvas = document.createElement('canvas')
+      try {
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('Canvas export is unavailable in this browser.')
+
+        canvas.width = config.canvasWidth
+        canvas.height = config.canvasHeight
+        renderWatermark(ctx, config, bgImage, watermarkImage)
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Could not create the PNG. Try a smaller canvas.')), 'image/png')
+        })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.download = `watermark-${Date.now()}.png`
+        link.href = url
+        link.click()
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+      } finally {
+        canvas.width = 0
+        canvas.height = 0
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Could not export the PNG.')
     } finally {
+      exportInProgress.current = false
       setDownloading(false)
     }
   }
 
   const [mobilePanel, setMobilePanel] = useState<'watermark' | 'parameters'>('watermark')
+  const exportTooLarge = config.canvasWidth * config.canvasHeight > 32_000_000
 
   return (
     <div className="app-shell">
@@ -902,8 +1016,8 @@ export default function App() {
 
       {/* Mobile tab bar */}
       <div className="mobile-tabs">
-        <button className={mobilePanel === 'watermark' ? 'active' : ''} onClick={() => setMobilePanel('watermark')}>Watermark</button>
-        <button className={mobilePanel === 'parameters' ? 'active' : ''} onClick={() => setMobilePanel('parameters')}>Parameters</button>
+        <button className={mobilePanel === 'watermark' ? 'active' : ''} aria-pressed={mobilePanel === 'watermark'} onClick={() => setMobilePanel('watermark')}>Watermark</button>
+        <button className={mobilePanel === 'parameters' ? 'active' : ''} aria-pressed={mobilePanel === 'parameters'} onClick={() => setMobilePanel('parameters')}>Parameters</button>
       </div>
 
       {/* Main layout */}
@@ -930,6 +1044,7 @@ export default function App() {
                   <button
                     key={tp}
                     onClick={() => update('type', tp)}
+                    aria-pressed={config.type === tp}
                     style={{
                       flex: 1, padding: '7px 13px',
                       background: config.type === tp ? t.accent : 'transparent',
@@ -957,6 +1072,7 @@ export default function App() {
                   <button
                     key={m}
                     onClick={() => update('mode', m)}
+                    aria-pressed={config.mode === m}
                     style={{
                       flex: 1, padding: '7px 13px',
                       background: config.mode === m ? t.accent : 'transparent',
@@ -982,7 +1098,7 @@ export default function App() {
                 <SectionLabel>Text Options</SectionLabel>
                 <div>
                   <FieldLabel>Watermark Text</FieldLabel>
-                  <NvidiaInput value={config.text} onChange={(v) => update('text', v)} placeholder="Enter watermark text" />
+                  <NvidiaInput value={config.text} onChange={(v) => update('text', v)} placeholder="Enter watermark text" ariaLabel="Watermark text" />
                 </div>
                 <div>
                   <FieldLabel>Font</FieldLabel>
@@ -991,14 +1107,14 @@ export default function App() {
                 <div>
                   <FieldLabel>Text Color</FieldLabel>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <input type="color" value={config.textColor} onChange={(e) => update('textColor', e.target.value)} style={{ width: 34, height: 30 }} />
+                    <input type="color" aria-label="Text color" value={config.textColor} onChange={(e) => update('textColor', e.target.value)} style={{ width: 34, height: 30 }} />
                     <span style={{ fontSize: 11, color: t.textMuted, fontFamily: 'monospace', fontWeight: 700 }}>
                       {config.textColor.toUpperCase()}
                     </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
                     {TEXT_COLOR_SWATCHES.map((c) => (
-                      <button key={c} title={c} onClick={() => update('textColor', c)} style={{
+                      <button key={c} title={c} aria-label={`Text color ${c}`} onClick={() => update('textColor', c)} style={{
                         aspectRatio: '1', width: '100%', background: c, padding: 0,
                         border: config.textColor === c ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
                         borderRadius: 0, cursor: 'pointer',
@@ -1013,7 +1129,7 @@ export default function App() {
             {config.type === 'image' && (
               <div>
                 <SectionLabel>Watermark Image</SectionLabel>
-                <label
+                <label className="file-upload"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     padding: '14px 13px', border: `2px dashed ${t.border}`, borderRadius: t.radius,
@@ -1028,31 +1144,29 @@ export default function App() {
                     <polyline points="21 15 16 10 5 21"/>
                   </svg>
                   <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {config.uploadedImage ? 'Click to replace image' : 'Click to upload image'}
+                     {watermarkImage ? 'Click to replace image' : 'Click to upload image'}
                   </span>
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                   <input type="file" accept="image/*" className="file-input" aria-label="Upload watermark image" disabled={downloading} onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (!file) return
-                    setWmUploadError(null)
-                    if (file.size > 20 * 1024 * 1024) {
-                      setWmUploadError('File exceeds 20 MB limit.')
-                      e.target.value = ''
-                      return
-                    }
-                    const reader = new FileReader()
-                    reader.onload = (ev) => update('uploadedImage', ev.target?.result as string)
-                    reader.readAsDataURL(file)
+                     e.target.value = ''
+                     if (file) void loadWatermark(file)
                   }} />
                 </label>
                 {wmUploadError && (
                   <div style={{ marginTop: 6, fontSize: 11, color: '#ff6b6b', fontWeight: 700 }}>{wmUploadError}</div>
                 )}
-                {config.uploadedImage && !wmUploadError && (
-                  <div style={{ marginTop: 8, fontSize: 11, color: t.accent, fontWeight: 700 }}>&#10003; Watermark image ready</div>
+                 {wmLoading && <div role="status" style={{ marginTop: 6, fontSize: 11, color: t.textMuted }}>Loading image…</div>}
+                 {watermarkImage && (
+                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                     <span style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>&#10003; Watermark image ready</span>
+                     <button className="utility-button" disabled={wmLoading || downloading} onClick={() => setCropTarget('watermark')}>Crop image</button>
+                     <button className="utility-button" disabled={downloading} onClick={removeWatermark}>Remove</button>
+                   </div>
                 )}
                 <div style={{ marginTop: 10 }}>
                   <FieldLabel>Object Fit</FieldLabel>
                   <FitToggle
+                     label="Watermark image fit"
                     value={config.wmFit}
                     options={[
                       { label: 'Contain', value: 'contain' },
@@ -1071,7 +1185,20 @@ export default function App() {
 
         {/* Canvas preview */}
         <div className="panel-canvas">
-          <WatermarkCanvas config={config} bgImage={bgImage} onBgImageChange={setBgImage} bgUploadError={bgUploadError} onBgUploadError={setBgUploadError} onBgFitChange={(v) => update('bgFit', v)} onBgColorChange={(v) => update('bgColor', v)} />
+          <WatermarkCanvas
+            config={config}
+            bgImage={bgImage}
+            watermarkImage={watermarkImage}
+            onBgFileSelect={loadBackground}
+            onBgImageRemove={removeBackground}
+            onEditBgCrop={() => setCropTarget('background')}
+            onPlacementChange={movePlacement}
+            bgUploadError={bgUploadError}
+            bgLoading={bgLoading}
+            busy={downloading}
+            onBgFitChange={(v) => update('bgFit', v)}
+            onBgColorChange={(v) => update('bgColor', v)}
+          />
         </div>
 
         {/* Right controls panel — canvas size, parameters, options */}
@@ -1091,14 +1218,8 @@ export default function App() {
             <div>
               <SectionLabel>Canvas Size (px)</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <FieldLabel>Width</FieldLabel>
-                  <NvidiaInput type="number" value={config.canvasWidth} onChange={(v) => update('canvasWidth', Math.min(8000, Math.max(1, Number(v))))} placeholder="800" />
-                </div>
-                <div>
-                  <FieldLabel>Height</FieldLabel>
-                  <NvidiaInput type="number" value={config.canvasHeight} onChange={(v) => update('canvasHeight', Math.min(8000, Math.max(1, Number(v))))} placeholder="600" />
-                </div>
+                <DimensionInput label="Width" value={config.canvasWidth} onChange={(v) => update('canvasWidth', v)} />
+                <DimensionInput label="Height" value={config.canvasHeight} onChange={(v) => update('canvasHeight', v)} />
               </div>
               <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' as const }}>
                 {[
@@ -1121,6 +1242,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              {exportTooLarge && <div role="alert" style={{ marginTop: 7, color: '#ff6b6b', fontSize: 11 }}>Reduce canvas size below 32 million pixels to export.</div>}
             </div>
 
             {/* Sliders */}
@@ -1142,6 +1264,8 @@ export default function App() {
                     spacingY:  DEFAULT_CONFIG.spacingY,
                     posX:      DEFAULT_CONFIG.posX,
                     posY:      DEFAULT_CONFIG.posY,
+                    tileOffsetX: DEFAULT_CONFIG.tileOffsetX,
+                    tileOffsetY: DEFAULT_CONFIG.tileOffsetY,
                     opacity:   DEFAULT_CONFIG.opacity,
                     rotation:  DEFAULT_CONFIG.rotation,
                   }))}
@@ -1166,8 +1290,10 @@ export default function App() {
               </div>
               <RangeInput label="Size"      value={config.fontSize}                  min={8}    max={1000} unit="px" onChange={(v) => update('fontSize', v)} />
               {config.mode === 'tiled' && <>
-                <RangeInput label="Spacing X" value={config.spacingX}                  min={20}   max={2000} unit="px" onChange={(v) => update('spacingX', v)} />
-                <RangeInput label="Spacing Y" value={config.spacingY}                  min={20}   max={2000} unit="px" onChange={(v) => update('spacingY', v)} />
+                <RangeInput label="Spacing X" value={config.spacingX} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingX: v, tileOffsetX: Math.min(prev.tileOffsetX, v) }))} />
+                <RangeInput label="Spacing Y" value={config.spacingY} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingY: v, tileOffsetY: Math.min(prev.tileOffsetY, v * (prev.stagger ? 2 : 1)) }))} />
+                <RangeInput label="Tile origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} />
+                <RangeInput label="Tile origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} />
               </>}
               {config.mode === 'single' && <>
                 <RangeInput label="Position X" value={config.posX} min={0} max={100} unit="%" onChange={(v) => update('posX', v)} />
@@ -1175,25 +1301,28 @@ export default function App() {
               </>}
               <RangeInput label="Opacity"   value={Math.round(config.opacity * 100)} min={0}    max={100} unit="%" onChange={(v) => update('opacity', v / 100)} />
               <RangeInput label="Rotation"  value={config.rotation}                  min={-180} max={180} unit="°" onChange={(v) => update('rotation', v)} />
+              <div style={{ fontSize: 11, color: t.textMuted }}>Tip: drag the preview to move the watermark.</div>
             </div>
 
             {/* Options */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <SectionLabel>Options</SectionLabel>
               {config.mode === 'tiled' && (
-                <CheckboxRow id="stagger" label="Stagger columns (brick)" checked={config.stagger} onChange={(v) => update('stagger', v)} />
+                <CheckboxRow id="stagger" label="Stagger rows (brick)" checked={config.stagger} onChange={(v) => setConfig((prev) => ({ ...prev, stagger: v, tileOffsetY: Math.min(prev.tileOffsetY, prev.spacingY * (v ? 2 : 1)) }))} />
               )}
               <CheckboxRow id="mirrorH"      label="Mirror horizontal"      checked={config.mirrorH}      onChange={(v) => update('mirrorH', v)} />
               <CheckboxRow id="mirrorV"      label="Mirror vertical"        checked={config.mirrorV}      onChange={(v) => update('mirrorV', v)} />
-              <CheckboxRow id="transparent" label="Transparent background"  checked={config.transparentBg} onChange={(v) => update('transparentBg', v)} />
+              <CheckboxRow id="transparent" label="Transparent PNG background" checked={config.transparentBg} onChange={(v) => update('transparentBg', v)} />
+              {config.transparentBg && <div style={{ color: t.textMuted, fontSize: 11 }}>The checkerboard stays inside the outlined canvas. Only the watermark pixels appear in the PNG.</div>}
             </div>
 
           </div>
 
           {/* Export button — hidden on mobile */}
           <div className="desktop-export" style={{ flexShrink: 0, padding: '10px 12px', borderTop: `1px solid ${t.border}`, background: t.bgSurface }}>
-            <GreenButton onClick={download} fullWidth disabled={downloading}>
-              {downloading ? 'Exporting...' : 'Export PNG'}
+            {exportError && <div role="alert" style={{ color: '#ff6b6b', fontSize: 11, marginBottom: 6 }}>{exportError}</div>}
+            <GreenButton onClick={download} fullWidth disabled={downloading || wmLoading || bgLoading || exportTooLarge}>
+              {downloading ? 'Exporting...' : wmLoading || bgLoading ? 'Loading image…' : exportTooLarge ? 'Canvas too large' : 'Export PNG'}
             </GreenButton>
           </div>
         </div>
@@ -1202,10 +1331,24 @@ export default function App() {
 
       {/* Export button pinned at bottom on mobile */}
       <div className="mobile-export">
-        <GreenButton onClick={download} fullWidth disabled={downloading}>
-          {downloading ? 'Exporting...' : 'Export PNG'}
+        {exportError && <div role="alert" style={{ color: '#ff6b6b', fontSize: 11, marginBottom: 6 }}>{exportError}</div>}
+        <GreenButton onClick={download} fullWidth disabled={downloading || wmLoading || bgLoading || exportTooLarge}>
+          {downloading ? 'Exporting...' : wmLoading || bgLoading ? 'Loading image…' : exportTooLarge ? 'Canvas too large' : 'Export PNG'}
         </GreenButton>
       </div>
+
+      {cropTarget && (cropTarget === 'background' ? bgImage : watermarkImage) && (
+        <CropEditor
+          key={cropTarget}
+          image={(cropTarget === 'background' ? bgImage : watermarkImage)!}
+          crop={cropTarget === 'background' ? config.bgCrop : config.wmCrop}
+          onApply={(crop: CropRect) => {
+            update(cropTarget === 'background' ? 'bgCrop' : 'wmCrop', crop)
+            setCropTarget(null)
+          }}
+          onClose={() => setCropTarget(null)}
+        />
+      )}
 
     </div>
   )

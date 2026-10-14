@@ -13,7 +13,7 @@
   --color-bg:            #000000;  /* Page background */
   --color-bg-surface:    #0a0a0a;  /* Panels, inputs */
   --color-bg-raised:     #1a1a1a;  /* Panel headers, cards */
-  --color-bg-check:      #2a2a2a;  /* Checkerboard tile */
+  --color-bg-check:      #d9d9d9;  /* Transparent canvas checkerboard tile */
 
   /* Text */
   --color-text:          #ffffff;  /* Primary text on dark */
@@ -140,6 +140,44 @@ input[type="color"] {
 input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
 input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
 
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-upload:focus-within {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.utility-button {
+  padding: 3px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  font: 700 11px Arial, Helvetica, sans-serif;
+  cursor: pointer;
+}
+
+.utility-button:hover,
+.utility-button:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.utility-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ─── Transparent canvas checkerboard ───────────────────────────────────────── */
 .canvas-checkerboard {
   background-image:
@@ -149,7 +187,7 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
     linear-gradient(-45deg, transparent 75%, var(--color-bg-check) 75%);
   background-size: 16px 16px;
   background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
-  background-color: var(--color-bg-raised);
+  background-color: #f5f5f5;
 }
 
 /* ─── Responsive layout ──────────────────────────────────────────────────────── */
@@ -196,6 +234,10 @@ input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
     height: 42dvh;
     min-height: 200px;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .preview-specs {
+    display: none !important;
   }
 
   /* Both panels stack into the second row, toggled by .hidden */
