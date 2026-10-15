@@ -576,7 +576,7 @@ function WatermarkCanvas({ config, bgImage, watermarkImage, onPlacementChange }:
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
       {/* Preview header */}
-      <div style={{
+      <div className="preview-header" style={{
         flexShrink: 0,
         padding: '8px 14px',
         background: t.bgRaised,
@@ -593,6 +593,7 @@ function WatermarkCanvas({ config, bgImage, watermarkImage, onPlacementChange }:
 
       {/* Canvas */}
       <div
+        className="preview-canvas-area"
         style={{
           flex: 1,
           background: t.bgRaised,
@@ -853,8 +854,8 @@ export default function App() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState<'source' | 'layout' | 'style' | 'canvas'>('source')
-  const [canvasView, setCanvasView] = useState<'size' | 'background'>('size')
+  const [activeTab, setActiveTab] = useState<'source' | 'adjust'>('source')
+  const [moreSettings, setMoreSettings] = useState(false)
   const [colorOpen, setColorOpen] = useState(false)
   const [shortPreview, setShortPreview] = useState(false)
   const exportTooLarge = config.canvasWidth * config.canvasHeight > 32_000_000
@@ -888,7 +889,7 @@ export default function App() {
       </header>
 
       <div className="workspace-tabs" role="tablist" aria-label="Editor controls" onKeyDown={(event) => {
-        const tabs = ['source', 'layout', 'style', 'canvas'] as const
+        const tabs = ['source', 'adjust'] as const
         const current = tabs.indexOf(activeTab)
         const next = event.key === 'ArrowRight' ? (current + 1) % tabs.length
           : event.key === 'ArrowLeft' ? (current + tabs.length - 1) % tabs.length
@@ -900,11 +901,11 @@ export default function App() {
         setShortPreview(false)
         event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
       }}>
-        {(['source', 'layout', 'style', 'canvas'] as const).map((tab) => (
+        {(['source', 'adjust'] as const).map((tab) => (
           <button key={tab} type="button" role="tab" aria-selected={activeTab === tab} aria-controls={tab === 'source' ? 'source-settings' : 'detail-settings'}
             tabIndex={activeTab === tab ? 0 : -1}
-            className={activeTab === tab ? 'active' : ''} onClick={() => { setActiveTab(tab); setColorOpen(false); setShortPreview(false) }}>
-            {tab === 'source' ? 'Watermark' : tab}
+            className={activeTab === tab ? 'active' : ''} onClick={() => { setActiveTab(tab); setMoreSettings(false); setColorOpen(false); setShortPreview(false) }}>
+            {tab === 'source' ? 'Watermark & canvas' : 'Placement & style'}
           </button>
         ))}
       </div>
@@ -913,11 +914,11 @@ export default function App() {
       <div className="main-grid">
 
         {/* Left controls panel — watermark type / content */}
-        <div id="source-settings" role="tabpanel" aria-label="Watermark settings" className={`panel-left${activeTab !== 'source' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
+        <div id="source-settings" role="tabpanel" aria-label="Watermark and canvas settings" className={`panel-left${activeTab !== 'source' ? ' hidden' : ''}${moreSettings ? ' show-more-settings' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
           <div className="settings-content">
 
             {/* Type toggle */}
-            <div>
+            <div className="watermark-type-section">
               <SectionLabel>Watermark</SectionLabel>
               <div className="segmented-row" role="group" aria-label="Watermark type">
                 {(['text', 'image'] as const).map((tp) => (
@@ -935,16 +936,16 @@ export default function App() {
 
             {/* Text options */}
             {config.type === 'text' && (
-              <div className="settings-section">
-                <div>
+              <div className="settings-section text-options">
+                <div className="watermark-text-field">
                   <FieldLabel>Watermark Text</FieldLabel>
                   <NvidiaInput value={config.text} onChange={(v) => update('text', v)} placeholder="Enter watermark text" ariaLabel="Watermark text" />
                 </div>
-                <div>
+                <div className="text-font-control mobile-more-section">
                   <FieldLabel>Font</FieldLabel>
                   <FontSearch value={config.fontFamily} onChange={(v) => update('fontFamily', v)} />
                 </div>
-                <div>
+                <div className="text-color-control mobile-more-section">
                   <FieldLabel>Text Color</FieldLabel>
                   <div className="color-row">
                     <input type="color" aria-label="Text color" value={config.textColor} onChange={(e) => update('textColor', e.target.value)} />
@@ -960,7 +961,7 @@ export default function App() {
 
             {/* Image watermark */}
             {config.type === 'image' && (
-              <div>
+              <div className="watermark-image-section">
                 <SectionLabel>Watermark Image</SectionLabel>
                 <label className="file-upload"
                   style={{
@@ -996,7 +997,7 @@ export default function App() {
                      <button className="utility-button" disabled={downloading} onClick={removeWatermark}>Remove</button>
                    </div>
                 )}
-                <div style={{ marginTop: 10 }}>
+                <div className="image-fit-control mobile-more-section" style={{ marginTop: 10 }}>
                   <FieldLabel>Object Fit</FieldLabel>
                   <FitToggle
                      label="Watermark image fit"
@@ -1023,35 +1024,14 @@ export default function App() {
               </div>
             </div>}
 
-          </div>
-        </div>
-
-        {/* Canvas preview */}
-        <div className="panel-canvas">
-          <WatermarkCanvas
-            config={config}
-            bgImage={bgImage}
-            watermarkImage={watermarkImage}
-            onPlacementChange={movePlacement}
-          />
-        </div>
-
-        <div id="detail-settings" role="tabpanel" aria-label={`${activeTab} settings`} className={`panel-right${activeTab === 'source' ? ' hidden' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
-          <div className="settings-content">
-
-            {activeTab === 'canvas' && <>
-            <div className="segmented-row" role="group" aria-label="Canvas controls">
-              <button type="button" aria-pressed={canvasView === 'size'} onClick={() => setCanvasView('size')}>Size & export</button>
-              <button type="button" aria-pressed={canvasView === 'background'} onClick={() => setCanvasView('background')}>Background</button>
-            </div>
-            {canvasView === 'size' && <div className="settings-section">
+            <div className="settings-section canvas-size-section">
             <div>
               <SectionLabel>Canvas Size (px)</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <DimensionInput label="Width" value={config.canvasWidth} onChange={(v) => update('canvasWidth', v)} />
                 <DimensionInput label="Height" value={config.canvasHeight} onChange={(v) => update('canvasHeight', v)} />
               </div>
-              <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' as const }}>
+              <div className="canvas-presets" style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' as const }}>
                 {[
                   { label: 'HD',     w: 1280, h: 720  },
                   { label: 'FHD',    w: 1920, h: 1080 },
@@ -1076,9 +1056,9 @@ export default function App() {
             </div>
             <CheckboxRow id="transparent" label="Transparent PNG" checked={config.transparentBg} onChange={(v) => update('transparentBg', v)} />
             {config.transparentBg && <div className="settings-note">Only watermark pixels are exported. The checkerboard marks the canvas bounds.</div>}
-            </div>}
+            </div>
 
-            {canvasView === 'background' && <div className="settings-section">
+             <div className="settings-section background-settings mobile-more-section">
               <SectionLabel>Background</SectionLabel>
               {config.transparentBg && <div className="settings-note">This background is hidden while Transparent PNG is selected.</div>}
               {!config.transparentBg && <div className="color-row">
@@ -1106,11 +1086,26 @@ export default function App() {
                   { label: 'Fill', value: 'fill' }, { label: 'None', value: 'none' },
                 ]} onChange={(fit) => update('bgFit', fit)} />
               </>}
-            </div>}
-            </>}
+            </div>
 
-            {activeTab === 'layout' && <>
-            <div>
+            <div className="mobile-more-trigger"><button type="button" className="utility-button" aria-expanded={moreSettings} onClick={() => { setColorOpen(false); setMoreSettings((open) => !open) }}>{moreSettings ? 'Back to main controls' : 'More settings'}</button></div>
+          </div>
+        </div>
+
+        {/* Canvas preview */}
+        <div className="panel-canvas">
+          <WatermarkCanvas
+            config={config}
+            bgImage={bgImage}
+            watermarkImage={watermarkImage}
+            onPlacementChange={movePlacement}
+          />
+        </div>
+
+        <div id="detail-settings" role="tabpanel" aria-label="Placement and style settings" className={`panel-right${activeTab === 'source' ? ' hidden' : ''}${moreSettings ? ' show-more-settings' : ''}`} style={{ background: t.bgSurface, borderRight: `1px solid ${t.border}` }}>
+          <div className="settings-content">
+
+            <div className="placement-mode-section">
               <SectionLabel>Placement mode</SectionLabel>
               <div className="segmented-row" role="group" aria-label="Placement mode">
                 {(['tiled', 'single'] as const).map((mode) => (
@@ -1120,7 +1115,7 @@ export default function App() {
                 ))}
               </div>
             </div>
-            <div className="settings-section">
+            <div className="settings-section layout-controls">
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 gap: 8,
@@ -1163,8 +1158,8 @@ export default function App() {
                 <div className="control-grid">
                   <RangeInput label="Spacing X" value={config.spacingX} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingX: v, tileOffsetX: Math.min(prev.tileOffsetX, v) }))} />
                   <RangeInput label="Spacing Y" value={config.spacingY} min={20} max={2000} unit="px" onChange={(v) => setConfig((prev) => ({ ...prev, spacingY: v, tileOffsetY: Math.min(prev.tileOffsetY, v * (prev.stagger ? 2 : 1)) }))} />
-                  <RangeInput label="Origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} />
-                  <RangeInput label="Origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} />
+                  <div className="origin-field"><RangeInput label="Origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} /></div>
+                  <div className="origin-field"><RangeInput label="Origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} /></div>
                 </div>
               </>}
               {config.mode === 'single' && <>
@@ -1176,23 +1171,28 @@ export default function App() {
               {config.mode === 'tiled' && <CheckboxRow id="stagger" label="Stagger rows" checked={config.stagger} onChange={(v) => setConfig((prev) => ({ ...prev, stagger: v, tileOffsetY: Math.min(prev.tileOffsetY, prev.spacingY * (v ? 2 : 1)) }))} />}
               <div className="settings-note">Drag the preview to move the {config.mode === 'tiled' ? 'entire pattern' : 'stamp'}.</div>
             </div>
-            </>}
 
-            {activeTab === 'style' && <>
-              <div className="settings-section">
+            {config.mode === 'tiled' && <div className="settings-section advanced-origin-section mobile-more-section">
+              <SectionLabel>Pattern origin</SectionLabel>
+              <div className="control-grid">
+                <RangeInput label="Origin X" value={Math.round(config.tileOffsetX)} min={0} max={config.spacingX} unit="px" onChange={(v) => update('tileOffsetX', v)} />
+                <RangeInput label="Origin Y" value={Math.round(config.tileOffsetY)} min={0} max={config.spacingY * (config.stagger ? 2 : 1)} unit="px" onChange={(v) => update('tileOffsetY', v)} />
+              </div>
+            </div>}
+
+              <div className="settings-section appearance-settings">
                 <SectionLabel>Watermark appearance</SectionLabel>
                 <RangeInput label="Opacity" value={Math.round(config.opacity * 100)} min={0} max={100} unit="%" onChange={(v) => update('opacity', v / 100)} />
-                <RangeInput label="Rotation" value={config.rotation} min={-180} max={180} unit="°" onChange={(v) => update('rotation', v)} />
+                <div className="mobile-more-section"><RangeInput label="Rotation" value={config.rotation} min={-180} max={180} unit="°" onChange={(v) => update('rotation', v)} /></div>
               </div>
-              <div className="settings-section">
+              <div className="settings-section flip-settings mobile-more-section">
                 <SectionLabel>Flip</SectionLabel>
                 <div className="control-grid">
                   <CheckboxRow id="mirrorH" label="Horizontal" checked={config.mirrorH} onChange={(v) => update('mirrorH', v)} />
                   <CheckboxRow id="mirrorV" label="Vertical" checked={config.mirrorV} onChange={(v) => update('mirrorV', v)} />
                 </div>
               </div>
-              <div className="settings-note">These changes apply to the watermark. Canvas transparency and background are under Canvas.</div>
-            </>}
+              <div className="mobile-more-trigger"><button type="button" className="utility-button" aria-expanded={moreSettings} onClick={() => setMoreSettings((open) => !open)}>{moreSettings ? 'Back to main controls' : 'More settings'}</button></div>
 
           </div>
 
